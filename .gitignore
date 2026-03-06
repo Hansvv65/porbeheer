@@ -3,6 +3,10 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
+
+porbeheer/public/cgi-bin/app/config.secrets.php
+porbeheer/public/cgi-bin/app/config.new.php
+
 # User-specific files
 *.rsuser
 *.suo
