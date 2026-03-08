@@ -9,6 +9,8 @@ requireRole(['ADMIN']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('contacts', $pdo);
+
 
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
@@ -104,7 +106,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
   }
   body{
     margin:0; font-family:Arial,sans-serif; color:var(--text);
-    background:url('/assets/images/admin-a.png') no-repeat center center fixed;
+    background:url('<?= h($bg) ?>') no-repeat center center fixed;
     background-size:cover;
   }
   .backdrop{
@@ -209,6 +211,10 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     color:var(--err); font-weight:800;
   }
   .muted{ color:var(--muted); font-size:13px; margin-top:6px; }
+    a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
 </style>
 </head>
 <body>

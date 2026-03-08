@@ -9,6 +9,8 @@ requireRole(['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('dashboard', $pdo);
+
 
 $tiles = [
   ['title'=>'Bands',       'href'=>'/admin/bands.php',      'roles'=>['ADMIN','BEHEER']],
@@ -49,8 +51,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
       margin:0;
       font-family: Arial, sans-serif;
       color: var(--text);
-      background: url('/assets/images/dashboard-a.png') no-repeat center center fixed;
-      background-size: cover;
+      background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
     }
 
     .backdrop{
@@ -159,6 +160,14 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
   a{color:#fff;text-decoration:none;transition:color .15s ease}
   a:hover{color:#ffd9b3}
   a:visited{color:#ffe0c2}
+  .userbox a{
+  color:#fff;
+  font-weight:bold;
+  text-decoration:none;
+  }
+  .userbox a:hover{
+  text-decoration:underline;
+  }
   </style>
 </head>
 <body>
@@ -171,8 +180,8 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
         </div>
 
         <div class="userbox"> 
-          <div class="line1"> Hallo <?= h($user['username'] ?? '') ?> · Jouw rol is <?= h($role) ?></div>
-          <div class="line2"> <a href="/admin/dashboard.php">Dashboard</a></div>
+          <div class="line1"> Hallo <a href="/admin/account.php"><?= h($user['username'] ?? '') ?></a> · Jouw rol is <?= h($role) ?></div>
+          <div class="line2"> <a href="/admin/dashboard.php">Dashboard</a> • <a href="/logout.php">Uitloggen</a></div>
         </div>
       </div>
 

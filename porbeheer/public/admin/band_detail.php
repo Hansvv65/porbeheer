@@ -9,6 +9,7 @@ requireRole(['ADMIN','BEHEER']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('bands', $pdo);
 
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) {
@@ -163,8 +164,7 @@ body{
   margin:0;
   font-family:Arial,sans-serif;
   color:var(--text);
-  background:url('/assets/images/bands-a.png') no-repeat center center fixed;
-  background-size:cover;
+  background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
 }
 .backdrop{
   min-height:100vh;
@@ -240,7 +240,10 @@ body{
 .small{font-size:13px;color:var(--muted)}
 hr{border:none;border-top:1px solid rgba(255,255,255,.12);margin:10px 0}
 a{color:#fff;text-decoration:none}
+a{color:#fff;text-decoration:none;transition:color .15s ease}
 a:hover{color:#ffd9b3}
+a:visited{color:#ffe0c2}
+
 </style>
 </head>
 <body>
@@ -262,6 +265,7 @@ a:hover{color:#ffd9b3}
       <div class="line1"><?= h($user['username'] ?? '') ?> · <?= h($role) ?></div>
       <div class="line2">
         <a href="/admin/dashboard.php">Dashboard</a> ·
+        <a href="/admin/bands.php">Bands</a> ·
         <a href="/logout.php">Uitloggen</a>
       </div>
     </div>

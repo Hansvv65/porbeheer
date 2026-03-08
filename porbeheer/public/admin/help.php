@@ -10,6 +10,8 @@ requireRole(['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('help', $pdo);
+
 
 function h(?string $v): string {
   return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
@@ -38,8 +40,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/help.php');
       margin:0;
       font-family: Arial, sans-serif;
       color: var(--text);
-      background: url('/assets/images/help-a.png') no-repeat center center fixed;
-      background-size: cover;
+      background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
     }
 
     .backdrop{
@@ -197,6 +198,10 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/help.php');
       border-radius: 10px;
       border: 1px solid rgba(255,255,255,.12);
     }
+      a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
   </style>
 </head>
 

@@ -9,6 +9,8 @@ requireRole(['ADMIN','BEHEER','FINANCIEEL']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('contacts', $pdo);
+
 
 function h(?string $v): string { return htmlspecialchars((string)$v); }
 
@@ -59,8 +61,7 @@ body{
  margin:0;
  font-family:Arial,sans-serif;
  color:var(--text);
- background:url('/assets/images/contacts-a.png') no-repeat center center fixed;
- background-size:cover;
+  background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
 }
 
 .backdrop{
@@ -183,8 +184,11 @@ th{background:rgba(255,255,255,.05)}
    </div>
  </div>
  <div class="userbox">
-   <div><strong><?= h($user['username'] ?? '') ?></strong></div>
-   <div style="font-size:13px;color:var(--muted)">Rol: <?= h($role) ?></div>
+    <div class="line1">Ingelogd: <?= h($user['username'] ?? '') ?> • Rol: <?= h((string)$role) ?></div>
+    <div class="line2">
+      <a href="/admin/dashboard.php">Dashboard</a> •
+      <a href="/logout.php">Uitloggen</a>
+    </div>
  </div>
 </div>
 

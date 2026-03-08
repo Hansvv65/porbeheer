@@ -9,6 +9,7 @@ requireRole(['ADMIN']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('audit', $pdo);
 
 /** fallback als h() niet globally bestaat */
 if (!function_exists('h')) {
@@ -138,8 +139,7 @@ function prettyJson($v): string {
       margin:0;
       font-family: Arial, sans-serif;
       color: var(--text);
-      background: url('/assets/images/admin-a.png') no-repeat center center fixed;
-      background-size: cover;
+      ound:url('<backgr?= h($bg) ?>') no-repeat center center fixed;      background-size: cover;
     }
 
     a{ color: #fff; }
@@ -345,6 +345,10 @@ function prettyJson($v): string {
       cursor:pointer;
       user-select:none;
     }
+  a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
   </style>
 </head>
 <body>

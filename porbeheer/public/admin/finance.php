@@ -9,6 +9,8 @@ requireRole(['ADMIN','BEHEER','FINANCIEEL']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('finance', $pdo);
+
 
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
@@ -111,8 +113,7 @@ function allowedTile(array $tile, string $role): bool {
       margin:0;
       font-family:Arial,sans-serif;
       color:var(--text);
-      background:url('/assets/images/finance-a.png') no-repeat center center fixed;
-      background-size:cover;
+      background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
     }
     .backdrop{
       min-height:100vh;
@@ -270,6 +271,10 @@ function allowedTile(array $tile, string $role): bool {
       font-weight:800;
     }
     .btn:hover{ background:rgba(255,255,255,.16); }
+      a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
   </style>
 </head>
 <body>

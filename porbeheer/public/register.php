@@ -20,6 +20,33 @@ function makeToken(int $bytes = 32): string {
 $errors = [];
 $success = null;
 
+function mailLayout(string $title, string $intro, string $contentHtml): string {
+    return '
+    <div style="margin:0;padding:24px;background:#f4f7fb;font-family:Arial,sans-serif;color:#243447;">
+      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);">
+        
+        <div style="padding:18px 24px;background:linear-gradient(180deg,#eef6ff,#e6f0fb);border-bottom:1px solid #d9e2ec;">
+          <div style="font-size:22px;font-weight:700;color:#1f3b57;">Porbeheer</div>
+          <div style="margin-top:4px;font-size:13px;color:#5b7083;">POP Oefenruimte Zevenaar</div>
+        </div>
+
+        <div style="padding:28px 24px;">
+          <h2 style="margin:0 0 12px 0;font-size:22px;color:#1f3b57;">' . h($title) . '</h2>
+          <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#425466;">' . h($intro) . '</p>
+
+          <div style="font-size:15px;line-height:1.7;color:#243447;">
+            ' . $contentHtml . '
+          </div>
+        </div>
+
+        <div style="padding:16px 24px;background:#f8fbff;border-top:1px solid #d9e2ec;font-size:12px;color:#6b7c93;">
+          Dit is een automatisch bericht van Porbeheer.
+        </div>
+      </div>
+    </div>';
+}
+
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf($_POST['csrf'] ?? null);
 
@@ -81,14 +108,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ];
             }
 
-            $html = "
-                <p>Hoi " . h($username) . ",</p>
-                <p>Je aanmelding voor Porbeheer is ontvangen.</p>
-                <p>Bevestig eerst je e-mailadres via deze link. Deze link is <strong>48 uur geldig</strong>.</p>
-                <p><a href=\"" . h($link) . "\">E-mailadres bevestigen</a></p>
-                <p>Daarna kan je account, indien nodig, door een beheerder worden goedgekeurd.</p>
-                <p>Heb jij dit niet aangevraagd? Dan kun je deze e-mail negeren.</p>
-            ";
+        $html = mailLayout(
+            'Aanmelding ontvangen',
+            'Je accountaanvraag voor Porbeheer is goed ontvangen.',
+            '
+            <p style="margin:0 0 14px 0;">Hoi ' . h($username) . ',</p>
+
+            <p style="margin:0 0 14px 0;">
+            Je bent aangemeld bij Porbeheer.
+            </p>
+
+            <p style="margin:0 0 14px 0;">
+            Bevestig eerst je e-mailadres via onderstaande link. Deze link is
+            <strong>48 uur geldig</strong>.
+            </p>
+
+            <p style="margin:18px 0;">
+            <a href="' . h($link) . '" style="display:inline-block;padding:12px 18px;background:#dfefff;border:1px solid #bdd3ea;border-radius:10px;color:#1f3b57;text-decoration:none;font-weight:700;">
+                E-mailadres bevestigen
+            </a>
+            </p>
+
+            <p style="margin:0 0 14px 0;">
+            Nadat je e-mailadres is bevestigd, volgt er nog een e-mail zodra de beheerder je aanmelding en rol heeft goedgekeurd.
+            </p>
+
+            <p style="margin:0;">
+            Heb jij dit niet aangevraagd? Dan kun je deze e-mail negeren.
+            </p>
+            '
+        );
+
 
             try {
                 sendEmail($email, 'Bevestig je aanmelding (Porbeheer)', $html, '', $attachments);

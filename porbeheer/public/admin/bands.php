@@ -9,6 +9,8 @@ requireRole(['ADMIN','BEHEER']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('bands', $pdo);
+
 
 if (!function_exists('h')) {
     function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
@@ -137,7 +139,7 @@ try {
 <style>
 :root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);}
 body{margin:0;font-family:Arial,sans-serif;color:var(--text);
-  background:url('/assets/images/bands-a.png') no-repeat center center fixed;background-size:cover;}
+  background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
 .backdrop{min-height:100vh;background:
   radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
   linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
@@ -176,6 +178,10 @@ a{color:#fff;text-decoration:none} a:hover{color:#ffd9b3}
 .kitem{padding:8px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);font-size:13px}
 .kitem .meta{margin-top:4px;font-size:12px;color:rgba(255,255,255,.75)}
 hr{border:none;border-top:1px solid rgba(255,255,255,.12);margin:10px 0}
+  a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
 </style>
 <script>
 function toggleBandDetails(id){
@@ -196,9 +202,8 @@ function toggleBandDetails(id){
 
     <div class="userbox">
       <div class="line1"><?= h($user['username'] ?? '') ?> · <?= h($role) ?></div>
-      <div class="line2">
-        <a href="/admin/dashboard.php">Dashboard</a>
-      </div>
+      <div class="line2"><a href="/admin/dashboard.php">Dashboard</a> •
+      <a href="/logout.php">Uitloggen</a></div>
     </div>
   </div>
 

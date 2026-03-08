@@ -9,6 +9,8 @@ requireRole(['ADMIN','BEHEER','FINANCIEEL']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('contacts', $pdo);
+
 
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
@@ -147,8 +149,7 @@ body{
  margin:0;
  font-family:Arial,sans-serif;
  color:var(--text);
- background:url('/assets/images/contacts-a.png') no-repeat center center fixed;
- background-size:cover;
+  background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
 }
 
 a{ color:#fff; }
@@ -337,6 +338,10 @@ input:focus, textarea:focus{
 .btn.danger:hover{
   border-color:rgba(255,120,120,.75);
 }
+  a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
 </style>
 </head>
 <body>
@@ -352,8 +357,12 @@ input:focus, textarea:focus{
         </div>
       </div>
       <div class="userbox">
-        <div><strong><?= h($user['username'] ?? '') ?></strong></div>
-        <div style="font-size:13px;color:var(--muted)">Rol: <?= h($role) ?></div>
+        <div class="line1">Ingelogd: <?= h($user['username'] ?? '') ?> • Rol: <?= h((string)$role) ?></div>
+        <div class="line2">
+            <a href="/admin/contacts.php">Contacten</a> •
+            <a href="/admin/dashboard.php">Dashboard</a> •
+            <a href="/logout.php">Uitloggen</a>
+        </div>
       </div>
     </div>
 

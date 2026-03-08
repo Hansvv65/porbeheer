@@ -3,14 +3,42 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../cgi-bin/app/bootstrap.php';
 require_once __DIR__ . '/../cgi-bin/app/auth.php';
+require_once __DIR__ . '/../cgi-bin/app/mail.php';
 include __DIR__ . '/../assets/includes/header.php';
 
 requireRole(['ADMIN']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('contacts', $pdo);
 
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
+
+function mailLayout(string $title, string $intro, string $contentHtml): string {
+    return '
+    <div style="margin:0;padding:24px;background:#f4f7fb;font-family:Arial,sans-serif;color:#243447;">
+      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);">
+        
+        <div style="padding:18px 24px;background:linear-gradient(180deg,#eef6ff,#e6f0fb);border-bottom:1px solid #d9e2ec;">
+          <div style="font-size:22px;font-weight:700;color:#1f3b57;">Porbeheer</div>
+          <div style="margin-top:4px;font-size:13px;color:#5b7083;">POP Oefenruimte Zevenaar</div>
+        </div>
+
+        <div style="padding:28px 24px;">
+          <h2 style="margin:0 0 12px 0;font-size:22px;color:#1f3b57;">' . h($title) . '</h2>
+          <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#425466;">' . h($intro) . '</p>
+
+          <div style="font-size:15px;line-height:1.7;color:#243447;">
+            ' . $contentHtml . '
+          </div>
+        </div>
+
+        <div style="padding:16px 24px;background:#f8fbff;border-top:1px solid #d9e2ec;font-size:12px;color:#6b7c93;">
+          Dit is een automatisch bericht van Porbeheer.
+        </div>
+      </div>
+    </div>';
+}
 
 $allowedRoles  = ['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER'];
 $rolePriority  = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'ADMIN'=>4];
@@ -37,7 +65,6 @@ function loadRoles(PDO $pdo, int $id): array {
 }
 
 function countAdmins(PDO $pdo): int {
-    // telt alleen admins die NIET soft-deleted zijn
     return (int)$pdo->query("
         SELECT COUNT(DISTINCT ur.user_id)
         FROM user_roles ur
@@ -48,10 +75,6 @@ function countAdmins(PDO $pdo): int {
 }
 
 function syncActiveWithStatus(PDO $pdo, int $id): void {
-    // Regels:
-    // - ACTIVE => active=1 (mits niet deleted)
-    // - PENDING/BLOCKED => active=0
-    // - deleted_at != null => active=0
     $pdo->prepare("
         UPDATE users
         SET active =
@@ -92,7 +115,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf($_POST['csrf'] ?? '');
     $action = (string)($_POST['action'] ?? '');
 
-    // reload fresh
     $target = loadUser($pdo, $id);
     if (!$target) {
         header('Location: /admin/users.php');
@@ -103,7 +125,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $rolesNow  = loadRoles($pdo, $id);
     $isTargetAdmin = in_array('ADMIN', $rolesNow, true) || ((string)$target['role'] === 'ADMIN');
 
-    // Safety: destructive actions on self
     if (in_array($action, ['block','soft_delete','hard_delete'], true) && $isSelf) {
         $errors[] = 'Je kunt deze actie niet op jezelf uitvoeren.';
     } else {
@@ -133,14 +154,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($action === 'approve') {
-            if ($isDeleted) $errors[] = 'User is verwijderd. Herstel eerst.';
-            else {
+            if ($isDeleted) {
+                $errors[] = 'User is verwijderd. Herstel eerst.';
+            } else {
                 $pdo->prepare("UPDATE users SET status='ACTIVE', approved_at=COALESCE(approved_at, NOW()) WHERE id=?")
                     ->execute([$id]);
                 syncActiveWithStatus($pdo, $id);
 
                 $success = 'User goedgekeurd en geactiveerd.';
                 auditLog($pdo, 'USER_APPROVE', 'admin/users_detail.php', ['id'=>$id]);
+
+                $target = loadUser($pdo, $id);
+
+                if (!empty($target['email'])) {
+                    $loginLink = appUrl('/login.php');
+                    $isEmailVerified = !empty($target['email_verified_at']);
+
+                    if ($isEmailVerified) {
+                        $html = mailLayout(
+                            'Aanmelding goedgekeurd',
+                            'Je account is goedgekeurd en staat nu actief.',
+                            '
+                            <p style="margin:0 0 14px 0;">Hoi ' . h((string)$target['username']) . ',</p>
+
+                            <p style="margin:0 0 14px 0;">
+                              Je aanmelding voor Porbeheer is goedgekeurd.
+                            </p>
+
+                            <p style="margin:0 0 14px 0;">
+                              Je kunt nu inloggen met je gebruikersnaam en wachtwoord.
+                            </p>
+
+                            <p style="margin:18px 0;">
+                              <a href="' . h($loginLink) . '" style="display:inline-block;padding:12px 18px;background:#dfefff;border:1px solid #bdd3ea;border-radius:10px;color:#1f3b57;text-decoration:none;font-weight:700;">
+                                Naar inloggen
+                              </a>
+                            </p>
+
+                            <p style="margin:0;">
+                              Veel succes met Porbeheer.
+                            </p>
+                            '
+                        );
+                    } else {
+                        $html = mailLayout(
+                            'Aanmelding goedgekeurd',
+                            'Je account is door de beheerder goedgekeurd.',
+                            '
+                            <p style="margin:0 0 14px 0;">Hoi ' . h((string)$target['username']) . ',</p>
+
+                            <p style="margin:0 0 14px 0;">
+                              Je aanmelding voor Porbeheer is goedgekeurd.
+                            </p>
+
+                            <p style="margin:0 0 14px 0;">
+                              Je kunt inloggen zodra je ook je e-mailadres hebt bevestigd via de verificatiemail.
+                            </p>
+
+                            <p style="margin:0;">
+                              Heb je die e-mail niet meer? Laat het dan aan een beheerder weten.
+                            </p>
+                            '
+                        );
+                    }
+
+                    try {
+                        sendEmail((string)$target['email'], 'Je aanmelding is goedgekeurd (Porbeheer)', $html);
+                        auditLog($pdo, 'USER_APPROVE_MAIL_SENT', 'admin/users_detail.php', ['id'=>$id]);
+                    } catch (Throwable $e) {
+                        auditLog($pdo, 'USER_APPROVE_MAIL_FAIL', 'admin/users_detail.php', [
+                            'id'    => $id,
+                            'error' => substr($e->getMessage(), 0, 200),
+                        ]);
+                    }
+                }
             }
         }
 
@@ -186,12 +273,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if (!$roles) $errors[] = 'Kies minimaal 1 rol.';
                 else {
-                    // ADMIN rol kan niet worden weggehaald bij ADMIN accounts
                     if ($isTargetAdmin && !in_array('ADMIN', $roles, true)) {
                         $errors[] = 'ADMIN rol kan niet verwijderd worden van een ADMIN account.';
                     }
 
-                    // Laatste admin beschermen
                     $adminCount    = countAdmins($pdo);
                     $willHaveAdmin  = in_array('ADMIN', $roles, true);
                     if ($isTargetAdmin && !$willHaveAdmin && $adminCount <= 1) {
@@ -228,7 +313,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'soft_delete') {
             $reason = trim((string)($_POST['delete_reason'] ?? ''));
 
-            // reload admin role state (zekerheid)
             $rolesNow = loadRoles($pdo, $id);
             $isTargetAdmin = in_array('ADMIN', $rolesNow, true) || ((string)$target['role'] === 'ADMIN');
 
@@ -279,7 +363,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($action === 'hard_delete') {
-            // Definitief verwijderen: alleen als hij al soft-deleted is.
             $target = loadUser($pdo, $id);
             $isDeleted = !empty($target['deleted_at']);
             $rolesNow  = loadRoles($pdo, $id);
@@ -291,17 +374,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $pdo->beginTransaction();
 
-                    // roles weg
                     $pdo->prepare("DELETE FROM user_roles WHERE user_id=?")->execute([$id]);
-
-                    // user weg
                     $pdo->prepare("DELETE FROM users WHERE id=?")->execute([$id]);
 
                     $pdo->commit();
 
                     auditLog($pdo, 'USER_HARD_DELETE', 'admin/users_detail.php', ['id'=>$id]);
 
-                    // terug naar overzicht
                     header('Location: /admin/users.php?deleted=1');
                     exit;
                 } catch (Throwable $e) {
@@ -318,45 +397,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($isDeleted) $errors[] = 'User is verwijderd. Herstel eerst.';
             else {
-                $mailFile = __DIR__ . '/../cgi-bin/app/mail.php';
-                if (!is_file($mailFile)) $errors[] = 'Mail helper ontbreekt: /app/mail.php ';
+                if (empty($target['email'])) $errors[] = 'Geen e-mail bekend bij deze user.';
+                elseif (($target['status'] ?? 'ACTIVE') === 'BLOCKED') $errors[] = 'User is geblokkeerd.';
                 else {
-                    require_once $mailFile;
+                    $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+                    $hash  = password_hash($token, PASSWORD_DEFAULT);
+                    $exp   = (new DateTime('+30 minutes'))->format('Y-m-d H:i:s');
 
-                    if (empty($target['email'])) $errors[] = 'Geen e-mail bekend bij deze user.';
-                    elseif (($target['status'] ?? 'ACTIVE') === 'BLOCKED') $errors[] = 'User is geblokkeerd.';
-                    else {
-                        $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
-                        $hash  = password_hash($token, PASSWORD_DEFAULT);
-                        $exp   = (new DateTime('+30 minutes'))->format('Y-m-d H:i:s');
+                    $pdo->prepare("
+                        UPDATE users
+                        SET reset_token_hash=?,
+                            reset_expires_at=?,
+                            reset_requested_at=NOW()
+                        WHERE id=?
+                    ")->execute([$hash, $exp, $id]);
 
-                        $pdo->prepare("
-                            UPDATE users
-                            SET reset_token_hash=?,
-                                reset_expires_at=?,
-                                reset_requested_at=NOW()
-                            WHERE id=?
-                        ")->execute([$hash, $exp, $id]);
+                    $link = appUrl('/reset.php?' . http_build_query([
+                        'token' => $token,
+                        'email' => (string)$target['email'],
+                    ]));
 
-                        $baseUrl = rtrim((string)(getenv('APP_BASE_URL') ?: 'https://porzbeheer.nl'), '/');
-                        $link = $baseUrl . "/reset.php?token=" . urlencode($token) . "&email=" . urlencode((string)$target['email']);
+                    $html = mailLayout(
+                        'Wachtwoord reset',
+                        'Er is een resetlink voor je account aangemaakt.',
+                        '
+                        <p style="margin:0 0 14px 0;">Hoi ' . h((string)$target['username']) . ',</p>
 
-                        $html = "
-                            <p>Hoi " . h((string)$target['username']) . ",</p>
-                            <p>Een beheerder heeft een wachtwoord-reset gestart. Deze link is 30 minuten geldig:</p>
-                            <p><a href=\"" . h($link) . "\">Wachtwoord resetten</a></p>
-                            <p>Niet aangevraagd? Dan kun je deze e-mail negeren.</p>
-                        ";
+                        <p style="margin:0 0 14px 0;">
+                          Een beheerder heeft een wachtwoord-reset gestart voor je account.
+                        </p>
 
-                        // FIX: sendMail() is vaak void → success op “geen exception”
-                        try {
-                            sendMail((string)$target['email'], 'Porbeheer wachtwoord reset', $html);
-                            $success = 'Resetlink verstuurd.';
-                            auditLog($pdo, 'ADMIN_PWD_RESET_SEND', 'admin/users_detail.php', ['id'=>$id]);
-                        } catch (Throwable $e) {
-                            $errors[] = 'Resetmail versturen mislukt (SMTP/config/log checken).';
-                            auditLog($pdo, 'ADMIN_PWD_RESET_SEND_FAIL', 'admin/users_detail.php', ['id'=>$id, 'err'=>$e->getMessage()]);
-                        }
+                        <p style="margin:0 0 14px 0;">
+                          Via onderstaande knop kun je een nieuw wachtwoord instellen. Deze link is
+                          <strong>30 minuten geldig</strong>.
+                        </p>
+
+                        <p style="margin:18px 0;">
+                          <a href="' . h($link) . '" style="display:inline-block;padding:12px 18px;background:#dfefff;border:1px solid #bdd3ea;border-radius:10px;color:#1f3b57;text-decoration:none;font-weight:700;">
+                            Wachtwoord resetten
+                          </a>
+                        </p>
+
+                        <p style="margin:0;">
+                          Heb jij dit niet verwacht? Neem dan contact op met een beheerder.
+                        </p>
+                        '
+                    );
+
+                    try {
+                        sendEmail((string)$target['email'], 'Porbeheer wachtwoord reset', $html);
+                        $success = 'Resetlink verstuurd.';
+                        auditLog($pdo, 'ADMIN_PWD_RESET_SEND', 'admin/users_detail.php', ['id'=>$id]);
+                    } catch (Throwable $e) {
+                        $errors[] = 'Resetmail versturen mislukt (SMTP/config/log checken).';
+                        auditLog($pdo, 'ADMIN_PWD_RESET_SEND_FAIL', 'admin/users_detail.php', ['id'=>$id, 'err'=>$e->getMessage()]);
                     }
                 }
             }
@@ -391,18 +485,14 @@ $rolesNow = loadRoles($pdo, $id);
 
 $isDeleted = !empty($target['deleted_at']);
 $status    = (string)($target['status'] ?? 'PENDING');
-
-// CONSISTENT: status is leidend voor actief/inactief
 $isActive  = ($status === 'ACTIVE') && !$isDeleted;
 
-// locked badge ook bij tijdelijke lock
 $lockedUntil   = $target['locked_until'] ?? null;
 $isTempLocked  = $lockedUntil && strtotime((string)$lockedUntil) > time();
 $showLocked    = ($status === 'BLOCKED') || $isTempLocked;
 
 $isTargetAdmin = in_array('ADMIN', $rolesNow, true) || ((string)$target['role'] === 'ADMIN');
 
-// === Eén status-badge bepalen (voor header) ===
 $statusLabel = $status;
 $statusClass = 'badge';
 
@@ -451,7 +541,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
   }
   body{
     margin:0; font-family:Arial,sans-serif; color:var(--text);
-    background:url('/assets/images/admin-a.png') no-repeat center center fixed;
+    background:url('<?= h($bg) ?>') no-repeat center center fixed;
     background-size:cover;
   }
   .backdrop{
@@ -586,6 +676,9 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
   }
   .roleitem{ display:flex; align-items:center; gap:8px; font-weight:900; font-size:13px; }
   .roleitem input{ transform:scale(1.12); }
+  a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
 </style>
 </head>
 <body>
@@ -650,6 +743,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
 
           <div class="label">Systeemvelden</div>
           <div class="small">created_at: <?= h((string)$target['created_at']) ?></div>
+          <div class="small">email_verified_at: <?= h((string)($target['email_verified_at'] ?? '—')) ?></div>
           <div class="small">approved_at: <?= h((string)($target['approved_at'] ?? '—')) ?></div>
           <div class="small">last_login_at: <?= h((string)($target['last_login_at'] ?? '—')) ?></div>
           <div class="small">reset_requested_at: <?= h((string)($target['reset_requested_at'] ?? '—')) ?></div>
@@ -776,6 +870,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
           <div class="label">Debug / velden</div>
           <div class="small">status: <?= h((string)$target['status']) ?></div>
           <div class="small">active (DB): <?= (int)$target['active'] ?> (wordt door status gesynchroniseerd)</div>
+          <div class="small">email_verified_at: <?= h((string)($target['email_verified_at'] ?? '—')) ?></div>
           <div class="small">failed_attempts: <?= (int)$target['failed_attempts'] ?></div>
           <div class="small">locked_until: <?= h((string)($target['locked_until'] ?? '—')) ?></div>
           <div class="small">reset_token_hash: <?= h((string)($target['reset_token_hash'] ? 'SET' : '—')) ?></div>

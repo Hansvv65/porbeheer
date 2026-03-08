@@ -9,6 +9,8 @@ requireRole(['ADMIN','BEHEER']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('contacts', $pdo);
+
 
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 

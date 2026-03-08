@@ -8,6 +8,8 @@ include __DIR__ . '/../assets/includes/header.php';
 requireRole(['ADMIN']); // Alleen ADMIN mag echt verwijderen
 
 $user = currentUser();
+$bg = themeImage('contacts', $pdo);
+
 
 function redirectBack(): void {
     header('Location: /admin/contact_edit.php?purged=1');

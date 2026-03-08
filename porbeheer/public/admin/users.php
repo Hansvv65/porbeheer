@@ -9,6 +9,8 @@ requireRole(['ADMIN']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('contacts', $pdo);
+
 
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
@@ -58,7 +60,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
   }
   body{
     margin:0; font-family:Arial,sans-serif; color:var(--text);
-    background:url('/assets/images/admin-a.png') no-repeat center center fixed;
+    background:url('<?= h($bg) ?>') no-repeat center center fixed;
     background-size:cover;
   }
   .backdrop{
@@ -180,6 +182,10 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
   .label{ color:var(--muted); font-size:12px; font-weight:800; }
   .value{ margin-top:4px; font-weight:900; }
   .small{ margin-top:6px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+    a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
 </style>
 </head>
 <body>
@@ -196,7 +202,9 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
         <div class="line1">Ingelogd: <?= h($user['username'] ?? '') ?> • Rol: <?= h($role) ?></div>
         <div class="line2">
           <a href="/admin/dashboard.php">Dashboard</a> •
-          <a href="/admin/beheer.php">Beheer</a>
+          <a href="/admin/beheer.php">Beheer</a> • 
+          <a href="/logout.php">Uitloggen</a>
+
         </div>
       </div>
     </div>

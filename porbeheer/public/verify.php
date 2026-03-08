@@ -36,26 +36,26 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $token === ''
 
         $errors[] = 'Ongeldige bevestigingslink.';
         auditLog($pdo, 'EMAIL_VERIFY_INVALID', 'auth/verify', [
-            'email' => $email,
+            'email'  => $email,
             'reason' => 'user_not_found',
         ]);
     } else {
         if (!empty($u['email_verified_at'])) {
-            $success = 'Je e-mailadres is al bevestigd. Je kunt nu, na eventuele goedkeuring, inloggen.';
+            $success = 'Je e-mailadres is al bevestigd. Zodra een beheerder je account en rol heeft goedgekeurd, ontvang je daarvan bericht.';
 
             auditLog($pdo, 'EMAIL_VERIFY_ALREADY_DONE', 'auth/verify', [
-                'email' => $email,
+                'email'   => $email,
                 'user_id' => (int)$u['id'],
             ]);
         } else {
-            $exp = (string)($u['verify_expires_at'] ?? '');
+            $exp  = (string)($u['verify_expires_at'] ?? '');
             $hash = (string)($u['verify_token_hash'] ?? '');
 
             if ($exp === '' || strtotime($exp) < time()) {
                 $errors[] = 'Bevestigingslink is verlopen. Meld je opnieuw aan.';
 
                 auditLog($pdo, 'EMAIL_VERIFY_EXPIRED', 'auth/verify', [
-                    'email' => $email,
+                    'email'   => $email,
                     'user_id' => (int)$u['id'],
                 ]);
             } elseif ($hash === '' || !password_verify($token, $hash)) {
@@ -64,33 +64,30 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $token === ''
                 $errors[] = 'Ongeldige bevestigingslink.';
 
                 auditLog($pdo, 'EMAIL_VERIFY_INVALID', 'auth/verify', [
-                    'email' => $email,
+                    'email'   => $email,
                     'user_id' => (int)$u['id'],
-                    'reason' => 'token_mismatch',
+                    'reason'  => 'token_mismatch',
                 ]);
             } else {
-                $newStatus = (($u['status'] ?? 'PENDING') === 'PENDING')
-                    ? 'ACTIVE'
-                    : (string)($u['status'] ?? 'ACTIVE');
-
+                // BELANGRIJK:
+                // verify.php bevestigt ALLEEN het e-mailadres
+                // en verandert NIET status/active/rol.
                 $pdo->prepare("
                     UPDATE users
                     SET email_verified_at = NOW(),
-                        status = ?,
                         verify_token_hash = NULL,
                         verify_expires_at = NULL
                     WHERE id = ?
                 ")->execute([
-                    $newStatus,
                     (int)$u['id']
                 ]);
 
                 auditLog($pdo, 'EMAIL_VERIFY_OK', 'auth/verify', [
-                    'email' => $email,
+                    'email'   => $email,
                     'user_id' => (int)$u['id'],
                 ]);
 
-                $success = 'E-mailadres bevestigd. Je kunt nu inloggen.';
+                $success = 'Je e-mailadres is bevestigd. Je account blijft in behandeling totdat een beheerder je aanmelding en rol heeft goedgekeurd.';
             }
         }
     }

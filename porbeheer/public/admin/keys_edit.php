@@ -10,6 +10,7 @@ requireRole(['ADMIN','BEHEER']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('keys', $pdo);
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/keys_edit.php');
 
@@ -200,7 +201,7 @@ $keyType = (string)($row['key_type'] ?? 'LOCKER');
 <style>
 :root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);}
 body{margin:0;font-family:Arial,sans-serif;color:var(--text);
-  background:url('/assets/images/keys-a.png') no-repeat center center fixed;background-size:cover;}
+    background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
 .backdrop{min-height:100vh;background:
   radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
   linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
@@ -243,6 +244,10 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
 .badge-ok{border-color:rgba(140,255,170,.35)}
 .badge-off{border-color:rgba(190,190,190,.35);color:rgba(255,255,255,.9)}
 .inline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
 </style>
 </head>
 <body>

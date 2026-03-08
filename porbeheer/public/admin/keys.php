@@ -10,6 +10,7 @@ requireRole(['ADMIN','BEHEER']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('keys', $pdo);
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/keys.php');
 
@@ -148,7 +149,7 @@ foreach ($keys as $kr) {
 <style>
 :root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);}
 body{margin:0;font-family:Arial,sans-serif;color:var(--text);
-  background:url('/assets/images/keys-a.png') no-repeat center center fixed;background-size:cover;}
+    background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
 .backdrop{min-height:100vh;background:
   radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
   linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
@@ -189,6 +190,10 @@ code{background:rgba(0,0,0,.25);padding:2px 6px;border-radius:8px;border:1px sol
 .kpi{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
 .kpi .pill{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);border-radius:999px;padding:6px 10px;font-size:13px;color:var(--muted)}
 hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
+  a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
 </style>
 </head>
 <body>

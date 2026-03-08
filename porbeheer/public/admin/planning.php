@@ -9,6 +9,8 @@ requireRole(['ADMIN','BEHEER']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('schedule', $pdo);
+
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/planning.php');
 
@@ -142,7 +144,7 @@ body{
 margin:0;
 font-family:Arial,sans-serif;
 color:var(--text);
-background:url('/assets/images/schedule-a.png') no-repeat center center fixed;
+  background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
 background-size:cover;
 }
 
@@ -324,6 +326,10 @@ a.slot.contract{
     0 0 18px rgba(255,217,179,.18),
     var(--shadow);
 }
+  a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
 </style>
 </head>
 <body>
@@ -339,7 +345,7 @@ a.slot.contract{
 
   <div class="userbox">
     <div class="line1"><?= h($user['username'] ?? '') ?> · <?= h($role) ?></div>
-    <div class="line2"><a href="/admin/dashboard.php">Dashboard</a></div>
+    <div class="line2"><a href="/admin/dashboard.php">Dashboard</a> • <a href="/logout.php">Uitloggen</a></div>
   </div>
 </div>
 

@@ -9,15 +9,16 @@ requireRole(['ADMIN']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('admin', $pdo);
+
 
 $tiles = [
-  ['title'=>'Gebruikers',    'href'=>'/admin/users.php',          'roles'=>['ADMIN']],
-  ['title'=>'Configuratie',  'href'=>'/admin/configuratie.php',   'roles'=>['ADMIN']],
-  ['title'=>'Audit logging', 'href'=>'/admin/audit_logging.php',  'roles'=>['ADMIN']],
-
-  // handig om terug te kunnen
-  // ['title'=>'Dashboard',     'href'=>'/admin/dashboard.php',      'roles'=>['ADMIN']],
-  ['title'=>'Uitloggen',     'href'=>'/logout.php',              'roles'=>['ADMIN']],
+  ['title'=>'Gebruikers',       'href'=>'/admin/users.php',          'roles'=>['ADMIN']],
+  ['title'=>'Configuratie',     'href'=>'/admin/configuratie.php',   'roles'=>['ADMIN']],
+  ['title'=>'Audit logging',    'href'=>'/admin/audit_logging.php',  'roles'=>['ADMIN']],
+  ['title'=>'Database schema',  'href'=>'/admin/db_schema.php',      'roles'=>['ADMIN']],
+  ['title'=>'Uitloggen',        'href'=>'/logout.php',               'roles'=>['ADMIN']],
+  ['title'=>'Changelog',        'href'=>'/admin/changelog.php',      'roles'=>['ADMIN']],
 ];
 
 function allowedTile(array $tile, string $role): bool {
@@ -46,7 +47,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
       margin:0;
       font-family: Arial, sans-serif;
       color: var(--text);
-      background: url('/assets/images/admin-a.png') no-repeat center center fixed;
+      background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
       background-size: cover;
     }
 
@@ -170,8 +171,11 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
     }
 
     }
+ 
+  a{color:#fff;text-decoration:none;transition:color .15s ease}
   a:hover{color:#ffd9b3}
   a:visited{color:#ffe0c2}
+
   </style>
 </head>
 <body>

@@ -10,6 +10,7 @@ requireRole(['ADMIN','BEHEER']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('keys', $pdo);
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/locker_edit.php');
 
@@ -105,7 +106,7 @@ $currentBandId = $row['band_id'] !== null ? (int)$row['band_id'] : 0;
 <style>
 :root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);}
 body{margin:0;font-family:Arial,sans-serif;color:var(--text);
-  background:url('/assets/images/keys-a.png') no-repeat center center fixed;background-size:cover;}
+    background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
 .backdrop{min-height:100vh;background:
   radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
   linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
@@ -144,6 +145,10 @@ textarea{min-height:110px;resize:vertical}
 .badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:12px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08)}
 .badge-ok{border-color:rgba(140,255,170,.35)}
 .badge-warn{border-color:rgba(255,220,140,.35)}
+  a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
 </style>
 </head>
 <body>

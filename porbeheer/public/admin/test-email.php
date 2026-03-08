@@ -138,6 +138,10 @@ code{background:#f0f2f4;padding:2px 6px;border-radius:6px}
 .inline input{width:auto;margin:0}
 .kv{background:#f7f9fb;border:1px solid #e7ebef;padding:10px;border-radius:10px}
 .kv div{margin:4px 0}
+  a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
 </style>
 </head>
 <body>

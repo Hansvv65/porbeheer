@@ -9,6 +9,8 @@ requireRole(['ADMIN','BEHEER']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('bands', $pdo);
+
 
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
@@ -393,7 +395,7 @@ body{
   margin:0;
   font-family:Arial,sans-serif;
   color:var(--text);
-  background:url('/assets/images/bands-a.png') no-repeat center center fixed;
+  background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
   background-size:cover;
 }
 .backdrop{
@@ -499,6 +501,10 @@ input,select{
   margin-top:18px;
 }
 .actions form{margin:0;}
+  a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
 </style>
 </head>
 <body>

@@ -234,9 +234,10 @@ function attemptLogin(PDO $pdo, string $username, string $password): array
         ->execute([$uid]);
 
     $_SESSION['user'] = [
-        'id' => $uid,
-        'username' => (string)$u['username'],
-        'role' => (string)($u['role'] ?? 'GEBRUIKER'),
+    'id'            => $uid,
+    'username'      => (string)$u['username'],
+    'role'          => (string)($u['role'] ?? 'GEBRUIKER'),
+    'theme_variant' => normalizeThemeVariant((string)($u['theme_variant'] ?? 'a')),
     ];
 
     session_regenerate_id(true);
@@ -262,4 +263,63 @@ function logout(PDO $pdo): void
         );
     }
     session_destroy();
+}
+
+function normalizeThemeVariant(?string $variant): string
+{
+    $variant = strtolower(trim((string)$variant));
+    return in_array($variant, ['a', 'b', 'c'], true) ? $variant : 'a';
+}
+
+function currentThemeVariant(PDO $pdo): string
+{
+    if (!empty($_SESSION['user']['theme_variant'])) {
+        return normalizeThemeVariant((string)$_SESSION['user']['theme_variant']);
+    }
+
+    $uid = (int)($_SESSION['user']['id'] ?? 0);
+    if ($uid <= 0) {
+        return 'a';
+    }
+
+    try {
+        $st = $pdo->prepare("SELECT theme_variant FROM users WHERE id = ? LIMIT 1");
+        $st->execute([$uid]);
+        $variant = normalizeThemeVariant((string)$st->fetchColumn());
+        $_SESSION['user']['theme_variant'] = $variant;
+        return $variant;
+    } catch (Throwable $e) {
+        return 'a';
+    }
+}
+
+function themeImage(string $baseName, PDO $pdo): string
+{
+    $baseName = trim($baseName);
+    if ($baseName === '') {
+        $baseName = 'admin';
+    }
+
+    return '/assets/images/' . $baseName . '-' . currentThemeVariant($pdo) . '.png';
+}
+
+function refreshSessionUser(PDO $pdo, int $userId): void
+{
+    $st = $pdo->prepare("
+        SELECT id, username, role, theme_variant
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+    ");
+    $st->execute([$userId]);
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+
+    if ($u) {
+        $_SESSION['user'] = [
+            'id'            => (int)$u['id'],
+            'username'      => (string)$u['username'],
+            'role'          => (string)($u['role'] ?? 'GEBRUIKER'),
+            'theme_variant' => normalizeThemeVariant((string)($u['theme_variant'] ?? 'a')),
+        ];
+    }
 }

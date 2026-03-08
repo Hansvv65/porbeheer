@@ -9,6 +9,9 @@ requireRole(['ADMIN','BEHEER','FINANCIEEL']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+$bg = themeImage('finance', $pdo);
+
+
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/transaction_new.php');
@@ -85,7 +88,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <title>Porbeheer - Invoer</title>
   <style>
     :root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);}
-    body{margin:0;font-family:Arial,sans-serif;color:var(--text);background:url('/assets/images/finance-a.png') no-repeat center center fixed;background-size:cover;}
+    body{margin:0;font-family:Arial,sans-serif;color:var(--text);
+      background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
     .backdrop{min-height:100vh;background:radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));padding:26px;box-sizing:border-box;display:flex;justify-content:center;}
     .wrap{width:min(980px,96vw);}
     .topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px;}
@@ -108,6 +112,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     textarea{min-height:90px}
     .row{margin-bottom:12px}
     .rowflex{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+      a{color:#fff;text-decoration:none;transition:color .15s ease}
+  a:hover{color:#ffd9b3}
+  a:visited{color:#ffe0c2}
+
   </style>
 </head>
 <body>
