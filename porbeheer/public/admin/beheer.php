@@ -14,7 +14,7 @@ $bg = themeImage('admin', $pdo);
 
 $tiles = [
   ['title'=>'Gebruikers',       'href'=>'/admin/users.php',          'roles'=>['ADMIN']],
-  ['title'=>'Configuratie',     'href'=>'/admin/configuratie.php',   'roles'=>['ADMIN']],
+  ['title'=>'Configuratie',     'href'=>'/admin/settings.php',       'roles'=>['ADMIN']],
   ['title'=>'Audit logging',    'href'=>'/admin/audit_logging.php',  'roles'=>['ADMIN']],
   ['title'=>'Database schema',  'href'=>'/admin/db_schema.php',      'roles'=>['ADMIN']],
   ['title'=>'Uitloggen',        'href'=>'/logout.php',               'roles'=>['ADMIN']],

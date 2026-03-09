@@ -145,7 +145,6 @@ margin:0;
 font-family:Arial,sans-serif;
 color:var(--text);
   background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
-background-size:cover;
 }
 
 .backdrop{

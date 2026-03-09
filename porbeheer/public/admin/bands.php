@@ -197,7 +197,9 @@ function toggleBandDetails(id){
   <div class="topbar">
     <div class="brand">
       <h1>Bands</h1>
-      <div class="sub">Overzicht</div>
+      <div class="sub">
+        Overzicht • <a href="/admin/band_edit.php">Nieuwe Band</a>
+      </div>
     </div>
 
     <div class="userbox">

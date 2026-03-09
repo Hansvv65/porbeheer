@@ -16,6 +16,23 @@ function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES,
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/finance.php');
 
+/*
+
+Voor het ophalen van de bedragen per maand en per keer, bepaald in beheer>config gebruik je dit scriptdeel :
+
+function getSetting(PDO $pdo, string $key, string $default = ''): string
+{
+    $st = $pdo->prepare("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1");
+    $st->execute([$key]);
+    $val = $st->fetchColumn();
+    return $val !== false ? (string)$val : $default;
+}
+
+$monthPrice = (float)getSetting($pdo, 'subscription_month_price', '0.00');
+$daypartPrice = (float)getSetting($pdo, 'daypart_price', '0.00');
+*/
+
+
 /* Periode */
 $today = new DateTimeImmutable('today');
 $monthStart = $today->modify('first day of this month')->format('Y-m-d');
