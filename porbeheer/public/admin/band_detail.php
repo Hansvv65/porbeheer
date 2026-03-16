@@ -11,6 +11,21 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('bands', $pdo);
 
+if (!function_exists('h')) {
+    function h(?string $v): string
+    {
+        return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+    }
+}
+
+function getSetting(PDO $pdo, string $key, string $default = '0.00'): string
+{
+    $st = $pdo->prepare("SELECT `value` FROM app_settings WHERE `key` = ? LIMIT 1");
+    $st->execute([$key]);
+    $val = $st->fetchColumn();
+    return $val !== false ? (string)$val : $default;
+}
+
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) {
     header("Location: /admin/bands.php");
@@ -36,7 +51,6 @@ if (!$band) {
     exit;
 }
 
-/* Porkasten (nieuwe tabel lockers) */
 $lockers = $pdo->prepare("
     SELECT locker_no
     FROM lockers
@@ -46,11 +60,9 @@ $lockers = $pdo->prepare("
 $lockers->execute([$id]);
 $lockerList = $lockers->fetchAll(PDO::FETCH_ASSOC);
 
-/**
- * Sleutels (laatste uitgiftes)
- * We tonen actieve uitgiftes: ISSUE zonder latere RETURN (voor dezelfde band+key).
- * + tonen kastnummer en sleutel-exemplaar (1/2)
- * + filter op soft-deleted sleutel/locker
+/*
+ * Actief uitgegeven sleutels:
+ * alleen laatste transactie per key telt.
  */
 $keys = $pdo->prepare("
     SELECT
@@ -61,26 +73,36 @@ $keys = $pdo->prepare("
       kt.action_at,
       c.name AS contact_name
     FROM key_transactions kt
+    JOIN (
+      SELECT
+        key_id,
+        MAX(
+          CONCAT(
+            DATE_FORMAT(action_at, '%Y-%m-%d %H:%i:%s'),
+            '|',
+            LPAD(id, 10, '0')
+          )
+        ) AS sortkey
+      FROM key_transactions
+      GROUP BY key_id
+    ) x
+      ON x.key_id = kt.key_id
+     AND CONCAT(
+          DATE_FORMAT(kt.action_at, '%Y-%m-%d %H:%i:%s'),
+          '|',
+          LPAD(kt.id, 10, '0')
+        ) = x.sortkey
     JOIN `keys` k ON k.id = kt.key_id AND k.deleted_at IS NULL
-    JOIN lockers l ON l.id = k.locker_id AND l.deleted_at IS NULL
+    LEFT JOIN lockers l ON l.id = k.locker_id AND l.deleted_at IS NULL
     LEFT JOIN contacts c ON c.id = kt.contact_id AND c.deleted_at IS NULL
     WHERE kt.band_id = ?
       AND kt.action = 'ISSUE'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM key_transactions r
-        WHERE r.band_id = kt.band_id
-          AND r.key_id = kt.key_id
-          AND r.action = 'RETURN'
-          AND r.action_at > kt.action_at
-      )
-    ORDER BY kt.action_at DESC
+    ORDER BY kt.action_at DESC, kt.id DESC
     LIMIT 30
 ");
 $keys->execute([$id]);
 $keyList = $keys->fetchAll(PDO::FETCH_ASSOC);
 
-/* Komende 4 dagdelen (schedule + contract events) */
 $slots = $pdo->prepare("
     SELECT *
     FROM (
@@ -95,9 +117,9 @@ $slots = $pdo->prepare("
         UNION ALL
 
         SELECT
-            'CONTRACT'     AS src,
-            e.event_date   AS date,
-            e.daypart      AS timeslot
+            'CONTRACT'   AS src,
+            e.event_date AS date,
+            e.daypart    AS timeslot
         FROM band_planner_events e
         WHERE e.band_id = ?
           AND e.event_date >= CURDATE()
@@ -111,16 +133,17 @@ $slots = $pdo->prepare("
 $slots->execute([$id, $id]);
 $rows = $slots->fetchAll(PDO::FETCH_ASSOC);
 
-/* Deduplicatie: schedule wint van contract op dezelfde date+timeslot */
 $slotList = [];
 $seen = [];
 foreach ($rows as $r) {
     $k = $r['date'] . '|' . $r['timeslot'];
+
     if (!isset($seen[$k])) {
         $seen[$k] = $r['src'];
         $slotList[] = $r;
         continue;
     }
+
     if ($seen[$k] === 'CONTRACT' && $r['src'] === 'SCHEDULE') {
         $seen[$k] = 'SCHEDULE';
         foreach ($slotList as $i => $existing) {
@@ -133,16 +156,57 @@ foreach ($rows as $r) {
 }
 $slotList = array_slice($slotList, 0, 4);
 
-/* Contract */
 $contract = $pdo->prepare("
     SELECT *
     FROM band_contracts
     WHERE band_id = ?
-    ORDER BY end_date DESC
+    ORDER BY
+      CASE
+        WHEN end_date IS NULL THEN 0
+        WHEN end_date >= CURDATE() THEN 1
+        ELSE 2
+      END ASC,
+      COALESCE(end_date, '9999-12-31') DESC,
+      id DESC
     LIMIT 1
 ");
 $contract->execute([$id]);
 $contractRow = $contract->fetch(PDO::FETCH_ASSOC);
+
+$repeatInfo = null;
+if ($contractRow) {
+    $st = $pdo->prepare("
+        SELECT daypart, event_date, start_time, end_time
+        FROM band_planner_events
+        WHERE contract_id = ?
+        ORDER BY
+          CASE WHEN event_date >= CURDATE() THEN 0 ELSE 1 END,
+          event_date ASC,
+          id ASC
+        LIMIT 1
+    ");
+    $st->execute([(int)$contractRow['id']]);
+    $repeatInfo = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+$weekdayNames = [
+    1 => 'Maandag',
+    2 => 'Dinsdag',
+    3 => 'Woensdag',
+    4 => 'Donderdag',
+    5 => 'Vrijdag',
+    6 => 'Zaterdag',
+    7 => 'Zondag',
+];
+
+$daypartLabels = [
+    'OCHTEND' => 'Ochtend (11:00 - 15:00)',
+    'MIDDAG'  => 'Middag (15:00 - 19:00)',
+    'AVOND'   => 'Avond (19:00 - 23:00)',
+];
+
+$subscriptionPrice = (string)getSetting($pdo, 'subscription_month_price', '0.00');
+$incidentalPrice   = (string)getSetting($pdo, 'daypart_price', '0.00');
 ?>
 <!DOCTYPE html>
 <html lang="nl">
@@ -164,7 +228,8 @@ body{
   margin:0;
   font-family:Arial,sans-serif;
   color:var(--text);
-  background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
+  background:url('<?= h($bg) ?>') no-repeat center center fixed;
+  background-size:cover;
 }
 .backdrop{
   min-height:100vh;
@@ -214,8 +279,8 @@ body{
   padding:24px;
 }
 
-.grid{display:grid;grid-template-columns: 1fr 1fr;gap:14px;}
-@media (max-width: 920px){ .grid{grid-template-columns:1fr;} }
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media (max-width:920px){ .grid{grid-template-columns:1fr;} }
 
 .card{
   border-radius:16px;
@@ -239,11 +304,9 @@ body{
 }
 .small{font-size:13px;color:var(--muted)}
 hr{border:none;border-top:1px solid rgba(255,255,255,.12);margin:10px 0}
-a{color:#fff;text-decoration:none}
 a{color:#fff;text-decoration:none;transition:color .15s ease}
 a:hover{color:#ffd9b3}
 a:visited{color:#ffe0c2}
-
 </style>
 </head>
 <body>
@@ -276,6 +339,12 @@ a:visited{color:#ffe0c2}
     <div class="grid">
 
       <div class="card">
+        <h2>Algemeen</h2>
+        <div><span class="badge">Band</span> <?= h((string)$band['name']) ?></div>
+        <div style="margin-top:8px;"><span class="badge">Stad</span> <?= h((string)($band['city'] ?? '—')) ?></div>
+      </div>
+
+      <div class="card">
         <h2>Contacten</h2>
         <div><span class="badge">1e</span> <?= h($band['primary_name'] ?? '—') ?></div>
         <div style="margin-top:8px;"><span class="badge">2e</span> <?= h($band['secondary_name'] ?? '—') ?></div>
@@ -289,7 +358,7 @@ a:visited{color:#ffe0c2}
       <div class="card">
         <h2>Porkasten</h2>
         <?php if ($lockerList): ?>
-          <?php foreach($lockerList as $l): ?>
+          <?php foreach ($lockerList as $l): ?>
             <span class="badge">Kast <?= h((string)$l['locker_no']) ?></span>
           <?php endforeach; ?>
         <?php else: ?>
@@ -300,11 +369,16 @@ a:visited{color:#ffe0c2}
       <div class="card">
         <h2>Sleutels (actief uitgegeven)</h2>
         <?php if ($keyList): ?>
-          <?php foreach($keyList as $k): ?>
+          <?php foreach ($keyList as $k): ?>
             <div style="margin-bottom:10px;">
               <strong><?= h((string)$k['key_code']) ?></strong>
               <div class="small">
-                Kast <?= h((string)$k['locker_no']) ?> · sleutel <?= h((string)$k['key_slot']) ?>
+                <?php if (!empty($k['locker_no'])): ?>
+                  Kast <?= h((string)$k['locker_no']) ?>
+                <?php else: ?>
+                  Geen kast
+                <?php endif; ?>
+                · sleutel <?= h((string)($k['key_slot'] ?? '—')) ?>
                 <?php if (!empty($k['description'])): ?>
                   · <?= h((string)$k['description']) ?>
                 <?php endif; ?>
@@ -323,9 +397,10 @@ a:visited{color:#ffe0c2}
       <div class="card">
         <h2>Komende 4 dagdelen</h2>
         <?php if ($slotList): ?>
-          <?php foreach($slotList as $s): ?>
+          <?php foreach ($slotList as $s): ?>
             <div style="margin-bottom:6px;">
-              <strong><?= h((string)$s['date']) ?></strong> — <?= h((string)$s['timeslot']) ?>
+              <strong><?= h((string)$s['date']) ?></strong>
+              — <?= h($daypartLabels[(string)$s['timeslot']] ?? (string)$s['timeslot']) ?>
               <?php if (($s['src'] ?? '') === 'CONTRACT'): ?>
                 <span class="small"> (contract)</span>
               <?php endif; ?>
@@ -341,9 +416,45 @@ a:visited{color:#ffe0c2}
         <h2>Contract</h2>
         <?php if ($contractRow): ?>
           <div><span class="badge">Type</span> <?= h((string)($contractRow['contract_type'] ?? '—')) ?></div>
-          <div style="margin-top:8px;"><span class="badge">Tot</span> <?= h((string)($contractRow['end_date'] ?? '—')) ?></div>
-          <?php if (array_key_exists('monthly_fee', $contractRow)): ?>
-            <div style="margin-top:8px;"><span class="badge">Maandbedrag</span> <?= h((string)$contractRow['monthly_fee']) ?></div>
+
+          <div style="margin-top:8px;">
+            <span class="badge">Vanaf</span>
+            <?= h((string)($contractRow['start_date'] ?? '—')) ?>
+          </div>
+
+          <div style="margin-top:8px;">
+            <span class="badge">Tot</span>
+            <?= h((string)($contractRow['end_date'] ?? '—')) ?>
+          </div>
+
+          <div style="margin-top:8px;">
+            <span class="badge">Tarief</span>
+            <?php if (($contractRow['contract_type'] ?? '') === 'ABONNEMENT'): ?>
+              € <?= h(number_format((float)($contractRow['monthly_fee'] ?? $subscriptionPrice), 2, ',', '.')) ?> per maand
+              <span class="small">(instelling: <?= h($subscriptionPrice) ?>)</span>
+            <?php elseif (($contractRow['contract_type'] ?? '') === 'INCIDENTEEL'): ?>
+              € <?= h(number_format((float)($contractRow['monthly_fee'] ?? $incidentalPrice), 2, ',', '.')) ?> per dagdeel
+              <span class="small">(instelling: <?= h($incidentalPrice) ?>)</span>
+            <?php else: ?>
+              —
+            <?php endif; ?>
+          </div>
+
+          <?php if ($repeatInfo): ?>
+            <?php
+              $weekdayNo = (int)(new DateTimeImmutable((string)$repeatInfo['event_date']))->format('N');
+              $weekdayLabel = $weekdayNames[$weekdayNo] ?? '—';
+              $daypartLabel = $daypartLabels[(string)$repeatInfo['daypart']] ?? (string)$repeatInfo['daypart'];
+            ?>
+            <div style="margin-top:8px;">
+              <span class="badge">Herhaling</span>
+              <?= h($weekdayLabel) ?> · <?= h($daypartLabel) ?>
+            </div>
+          <?php else: ?>
+            <div style="margin-top:8px;">
+              <span class="badge">Herhaling</span>
+              <span class="small">Geen repeterende dagdelen ingesteld.</span>
+            </div>
           <?php endif; ?>
         <?php else: ?>
           <div class="small">Geen contract gevonden.</div>

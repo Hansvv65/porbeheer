@@ -1,12 +1,19 @@
 <?php
 declare(strict_types=1);
 
+/* verify.php - verwerkt e-mailverificatie links. */
+
 require_once __DIR__ . '/cgi-bin/app/bootstrap.php';
 require_once __DIR__ . '/cgi-bin/app/mail.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
+
+function h(?string $v): string
+{
+    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+}
 
 if (isLoggedIn()) {
     header('Location: ' . appUrl('/admin/dashboard.php'));
@@ -23,7 +30,7 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $token === ''
     $errors[] = 'Ongeldige bevestigingslink.';
 } else {
     $st = $pdo->prepare("
-        SELECT id, username, status, verify_token_hash, verify_expires_at, email_verified_at
+        SELECT id, username, status, approved_at, verify_token_hash, verify_expires_at, email_verified_at
         FROM users
         WHERE email = ?
         LIMIT 1
@@ -41,7 +48,11 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $token === ''
         ]);
     } else {
         if (!empty($u['email_verified_at'])) {
-            $success = 'Je e-mailadres is al bevestigd. Zodra een beheerder je account en rol heeft goedgekeurd, ontvang je daarvan bericht.';
+            if (!empty($u['approved_at']) && (string)$u['status'] === 'ACTIVE') {
+                $success = 'Je e-mailadres is bevestigd en je account is actief. Je kunt nu inloggen. Bij je eerste login stel je meteen 2FA in.';
+            } else {
+                $success = 'Je e-mailadres is bevestigd. Je account wacht nu nog op goedkeuring door de beheerder.';
+            }
 
             auditLog($pdo, 'EMAIL_VERIFY_ALREADY_DONE', 'auth/verify', [
                 'email'   => $email,
@@ -69,14 +80,12 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $token === ''
                     'reason'  => 'token_mismatch',
                 ]);
             } else {
-                // BELANGRIJK:
-                // verify.php bevestigt ALLEEN het e-mailadres
-                // en verandert NIET status/active/rol.
                 $pdo->prepare("
                     UPDATE users
                     SET email_verified_at = NOW(),
                         verify_token_hash = NULL,
-                        verify_expires_at = NULL
+                        verify_expires_at = NULL,
+                        updated_at = NOW()
                     WHERE id = ?
                 ")->execute([
                     (int)$u['id']
@@ -87,12 +96,15 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $token === ''
                     'user_id' => (int)$u['id'],
                 ]);
 
-                $success = 'Je e-mailadres is bevestigd. Je account blijft in behandeling totdat een beheerder je aanmelding en rol heeft goedgekeurd.';
+                if (!empty($u['approved_at']) && (string)$u['status'] === 'ACTIVE') {
+                    $success = 'Je e-mailadres is bevestigd en je account is actief. Je kunt nu inloggen. Bij je eerste login stel je meteen 2FA in.';
+                } else {
+                    $success = 'Je e-mailadres is bevestigd. Je account wacht nu nog op goedkeuring door de beheerder.';
+                }
             }
         }
     }
 }
-
 ?>
 <!doctype html>
 <html lang="nl">
@@ -101,13 +113,60 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $token === ''
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - E-mail bevestigen</title>
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);--ok:#7CFFB2;--err:#FF8DA1;}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);background:url('/assets/images/loginbg.png') no-repeat center center fixed;background-size:cover;}
-.backdrop{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:26px;box-sizing:border-box;background:radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88));}
-.box{width:min(520px,92vw);border-radius:20px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));box-shadow:var(--shadow);backdrop-filter:blur(12px);padding:22px;}
-.msg{margin-top:10px;font-size:13px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08)}
-.msg.err{border-color:rgba(255,141,161,.35);background:rgba(255,141,161,.10);color:var(--err);font-weight:900;}
-.msg.ok{border-color:rgba(124,255,178,.35);background:rgba(124,255,178,.10);color:var(--ok);font-weight:900;}
+:root{
+  --text:#fff;
+  --muted:rgba(255,255,255,.78);
+  --glass:rgba(255,255,255,.12);
+  --glass2:rgba(255,255,255,.06);
+  --shadow:0 14px 40px rgba(0,0,0,.45);
+  --ok:#7CFFB2;
+  --err:#FF8DA1;
+}
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  color:var(--text);
+  background:url('/assets/images/loginbg.png') no-repeat center center fixed;
+  background-size:cover;
+}
+.backdrop{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:26px;
+  box-sizing:border-box;
+  background:radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88));
+}
+.box{
+  width:min(520px,92vw);
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,.18);
+  background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
+  box-shadow:var(--shadow);
+  backdrop-filter:blur(12px);
+  padding:22px;
+}
+.msg{
+  margin-top:10px;
+  font-size:13px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.08)
+}
+.msg.err{
+  border-color:rgba(255,141,161,.35);
+  background:rgba(255,141,161,.10);
+  color:var(--err);
+  font-weight:900;
+}
+.msg.ok{
+  border-color:rgba(124,255,178,.35);
+  background:rgba(124,255,178,.10);
+  color:var(--ok);
+  font-weight:900;
+}
 a{color:#fff}
 </style>
 </head>

@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+/* auth.php - sessie, login, audit en 2FA helpers voor Porbeheer */
+
 if (function_exists('startSecureSession')) {
     return;
 }
@@ -48,6 +50,7 @@ function startSecureSession(): void
 
         if ($last > 0 && ($now - $last) > $idle) {
             $_SESSION = [];
+
             if (ini_get('session.use_cookies')) {
                 $p = session_get_cookie_params();
                 setcookie(
@@ -60,9 +63,9 @@ function startSecureSession(): void
                     (bool)($p['httponly'] ?? true)
                 );
             }
-            session_destroy();
 
-            header('Location: ' . (function_exists('appUrl') ? appUrl('/login.php?timeout=1') : '/login.php?timeout=1'));
+            session_destroy();
+            header('Location: /login.php?timeout=1');
             exit;
         }
 
@@ -80,7 +83,10 @@ function csrfToken(): string
 
 function requireCsrf(?string $token): void
 {
-    $ok = is_string($token) && !empty($_SESSION['csrf']) && hash_equals((string)$_SESSION['csrf'], $token);
+    $ok = is_string($token)
+        && !empty($_SESSION['csrf'])
+        && hash_equals((string)$_SESSION['csrf'], $token);
+
     if (!$ok) {
         http_response_code(400);
         exit('CSRF fout.');
@@ -97,17 +103,49 @@ function isLoggedIn(): bool
     return !empty($_SESSION['user']['id']);
 }
 
+function currentPath(): string
+{
+    $path = (string)parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
+    return $path !== '' ? $path : '/';
+}
+
+function mustSetup2fa(): bool
+{
+    return isLoggedIn() && !empty($_SESSION['user']['must_setup_2fa']);
+}
+
+function enforce2faSetupIfNeeded(): void
+{
+    if (!mustSetup2fa()) {
+        return;
+    }
+
+    $path = currentPath();
+    $allowed = [
+        '/admin/setup-2fa.php',
+        '/logout.php',
+    ];
+
+    if (!in_array($path, $allowed, true)) {
+        header('Location: /admin/setup-2fa.php');
+        exit;
+    }
+}
+
 function requireLogin(): void
 {
     if (!isLoggedIn()) {
-        header('Location: ' . (function_exists('appUrl') ? appUrl('/login.php') : '/login.php'));
+        header('Location: /login.php');
         exit;
     }
+
+    enforce2faSetupIfNeeded();
 }
 
 function requireRole(array $roles): void
 {
     requireLogin();
+
     $role = $_SESSION['user']['role'] ?? 'GEBRUIKER';
     if (!in_array($role, $roles, true)) {
         http_response_code(403);
@@ -164,107 +202,6 @@ function auditLog(PDO $pdo, string $eventType, string $eventName, array $details
     }
 }
 
-function attemptLogin(PDO $pdo, string $username, string $password): array
-{
-    $username = trim($username);
-    $maxAttempts = 5;
-    $lockMinutes = 15;
-
-    if ($username === '' || $password === '') {
-        return ['ok' => false, 'msg' => 'Onjuiste inloggegevens.'];
-    }
-
-    $st = $pdo->prepare('SELECT * FROM users WHERE username = ? LIMIT 1');
-    $st->execute([$username]);
-    $u = $st->fetch(PDO::FETCH_ASSOC);
-
-    if (!$u || empty($u['password_hash'])) {
-        usleep(120000);
-        return ['ok' => false, 'msg' => 'Onjuiste inloggegevens.'];
-    }
-
-    $uid = (int)$u['id'];
-
-    if (!empty($u['deleted_at'])) {
-        return ['ok' => false, 'msg' => 'Onjuiste inloggegevens.', 'code' => 'DELETED', 'user_id' => $uid];
-    }
-
-    $status = (string)($u['status'] ?? 'PENDING');
-
-    if ($status === 'BLOCKED') {
-        return ['ok' => false, 'msg' => 'Onjuiste inloggegevens.', 'code' => 'BLOCKED', 'user_id' => $uid];
-    }
-    if ($status === 'PENDING') {
-        return ['ok' => false, 'msg' => 'Onjuiste inloggegevens.', 'code' => 'PENDING', 'user_id' => $uid];
-    }
-    if (!empty($u['locked_until']) && strtotime((string)$u['locked_until']) > time()) {
-        return [
-            'ok' => false,
-            'msg' => 'Account tijdelijk vergrendeld.',
-            'code' => 'LOCKED',
-            'user_id' => $uid,
-            'locked_until' => (string)$u['locked_until'],
-        ];
-    }
-
-    if (!password_verify($password, (string)$u['password_hash'])) {
-        $attempts = (int)($u['failed_attempts'] ?? 0) + 1;
-
-        if ($attempts >= $maxAttempts) {
-            $lockedUntil = (new DateTime("+{$lockMinutes} minutes"))->format('Y-m-d H:i:s');
-            $pdo->prepare('UPDATE users SET failed_attempts = ?, locked_until = ? WHERE id = ?')
-                ->execute([$attempts, $lockedUntil, $uid]);
-
-            return [
-                'ok' => false,
-                'msg' => 'Account tijdelijk vergrendeld.',
-                'code' => 'LOCKED',
-                'user_id' => $uid,
-                'locked_until' => $lockedUntil,
-            ];
-        }
-
-        $pdo->prepare('UPDATE users SET failed_attempts = ? WHERE id = ?')
-            ->execute([$attempts, $uid]);
-
-        return ['ok' => false, 'msg' => 'Onjuiste inloggegevens.', 'code' => 'BADPWD', 'user_id' => $uid];
-    }
-
-    $pdo->prepare('UPDATE users SET failed_attempts = 0, locked_until = NULL, last_login_at = NOW() WHERE id = ?')
-        ->execute([$uid]);
-
-    $_SESSION['user'] = [
-    'id'            => $uid,
-    'username'      => (string)$u['username'],
-    'role'          => (string)($u['role'] ?? 'GEBRUIKER'),
-    'theme_variant' => normalizeThemeVariant((string)($u['theme_variant'] ?? 'a')),
-    ];
-
-    session_regenerate_id(true);
-
-    return ['ok' => true, 'msg' => 'OK', 'user_id' => $uid];
-}
-
-function logout(PDO $pdo): void
-{
-    auditLog($pdo, 'LOGOUT', 'auth/logout');
-
-    $_SESSION = [];
-    if (ini_get('session.use_cookies')) {
-        $params = session_get_cookie_params();
-        setcookie(
-            session_name(),
-            '',
-            time() - 42000,
-            $params['path'] ?? '/',
-            $params['domain'] ?? '',
-            (bool)($params['secure'] ?? false),
-            (bool)($params['httponly'] ?? true)
-        );
-    }
-    session_destroy();
-}
-
 function normalizeThemeVariant(?string $variant): string
 {
     $variant = strtolower(trim((string)$variant));
@@ -306,7 +243,7 @@ function themeImage(string $baseName, PDO $pdo): string
 function refreshSessionUser(PDO $pdo, int $userId): void
 {
     $st = $pdo->prepare("
-        SELECT id, username, role, theme_variant
+        SELECT id, username, role, theme_variant, totp_enabled
         FROM users
         WHERE id = ?
         LIMIT 1
@@ -316,10 +253,254 @@ function refreshSessionUser(PDO $pdo, int $userId): void
 
     if ($u) {
         $_SESSION['user'] = [
-            'id'            => (int)$u['id'],
-            'username'      => (string)$u['username'],
-            'role'          => (string)($u['role'] ?? 'GEBRUIKER'),
-            'theme_variant' => normalizeThemeVariant((string)($u['theme_variant'] ?? 'a')),
+            'id'             => (int)$u['id'],
+            'username'       => (string)$u['username'],
+            'role'           => (string)($u['role'] ?? 'GEBRUIKER'),
+            'theme_variant'  => normalizeThemeVariant((string)($u['theme_variant'] ?? 'a')),
+            'must_setup_2fa' => empty($u['totp_enabled']),
         ];
     }
+}
+
+function loadAuthUserByUsername(PDO $pdo, string $username): ?array
+{
+    $st = $pdo->prepare("SELECT * FROM users WHERE username = ? LIMIT 1");
+    $st->execute([trim($username)]);
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+    return $u ?: null;
+}
+
+function loadAuthUserById(PDO $pdo, int $userId): ?array
+{
+    $st = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
+    $st->execute([$userId]);
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+    return $u ?: null;
+}
+
+function completeLoginSession(PDO $pdo, array $u, bool $mustSetup2fa): void
+{
+    $uid = (int)$u['id'];
+
+    $pdo->prepare("
+        UPDATE users
+        SET failed_attempts = 0,
+            locked_until = NULL,
+            last_login_at = NOW(),
+            updated_at = NOW()
+        WHERE id = ?
+    ")->execute([$uid]);
+
+    $_SESSION['user'] = [
+        'id'             => $uid,
+        'username'       => (string)$u['username'],
+        'role'           => (string)($u['role'] ?? 'GEBRUIKER'),
+        'theme_variant'  => normalizeThemeVariant((string)($u['theme_variant'] ?? 'a')),
+        'must_setup_2fa' => $mustSetup2fa,
+    ];
+
+    unset($_SESSION['pending_2fa']);
+    session_regenerate_id(true);
+}
+
+function clearPending2fa(): void
+{
+    unset($_SESSION['pending_2fa']);
+}
+
+function hasPending2fa(): bool
+{
+    return !empty($_SESSION['pending_2fa']['user_id']);
+}
+
+function beginPending2fa(array $u): void
+{
+    $_SESSION['pending_2fa'] = [
+        'user_id'    => (int)$u['id'],
+        'username'   => (string)$u['username'],
+        'started_at' => time(),
+    ];
+}
+
+function pending2faUserId(): int
+{
+    return (int)($_SESSION['pending_2fa']['user_id'] ?? 0);
+}
+
+function loadPending2faUser(PDO $pdo): ?array
+{
+    $uid = pending2faUserId();
+    if ($uid <= 0) {
+        return null;
+    }
+
+    return loadAuthUserById($pdo, $uid);
+}
+
+function buildTwoFactorAuth(): \RobThree\Auth\TwoFactorAuth
+{
+    static $tfa = null;
+
+    if ($tfa instanceof \RobThree\Auth\TwoFactorAuth) {
+        return $tfa;
+    }
+
+    $autoload = dirname(__DIR__) . '/vendor/autoload.php';
+    $qrProvider = __DIR__ . '/Qr/QrSvgProvider.php';
+
+    if (!is_file($autoload)) {
+        throw new RuntimeException('Composer autoload ontbreekt in public/cgi-bin/vendor/autoload.php');
+    }
+    if (!is_file($qrProvider)) {
+        throw new RuntimeException('QrSvgProvider ontbreekt in public/cgi-bin/app/Qr/QrSvgProvider.php');
+    }
+
+    require_once $autoload;
+    require_once $qrProvider;
+
+    $tfa = new \RobThree\Auth\TwoFactorAuth(
+        new \App\Qr\QrSvgProvider(),
+        'Porbeheer'
+    );
+
+    return $tfa;
+}
+
+function attemptPrimaryLogin(PDO $pdo, string $username, string $password): array
+{
+    $username = trim($username);
+    $maxAttempts = 5;
+    $lockMinutes = 15;
+
+    if ($username === '' || $password === '') {
+        return ['ok' => false, 'code' => 'INVALID_INPUT'];
+    }
+
+    $u = loadAuthUserByUsername($pdo, $username);
+
+    if (!$u || empty($u['password_hash'])) {
+        usleep(120000);
+        return ['ok' => false, 'code' => 'BADCREDS'];
+    }
+
+    $uid = (int)$u['id'];
+
+    if (!empty($u['deleted_at'])) {
+        return ['ok' => false, 'code' => 'DELETED', 'user_id' => $uid];
+    }
+
+    if (!empty($u['locked_until']) && strtotime((string)$u['locked_until']) > time()) {
+        return [
+            'ok' => false,
+            'code' => 'LOCKED',
+            'user_id' => $uid,
+            'locked_until' => (string)$u['locked_until'],
+        ];
+    }
+
+    if (!password_verify($password, (string)$u['password_hash'])) {
+        $attempts = (int)($u['failed_attempts'] ?? 0) + 1;
+
+        if ($attempts >= $maxAttempts) {
+            $lockedUntil = (new DateTime("+{$lockMinutes} minutes"))->format('Y-m-d H:i:s');
+
+            $pdo->prepare("
+                UPDATE users
+                SET failed_attempts = ?, locked_until = ?, updated_at = NOW()
+                WHERE id = ?
+            ")->execute([$attempts, $lockedUntil, $uid]);
+
+            return [
+                'ok' => false,
+                'code' => 'LOCKED',
+                'user_id' => $uid,
+                'locked_until' => $lockedUntil,
+            ];
+        }
+
+        $pdo->prepare("
+            UPDATE users
+            SET failed_attempts = ?, updated_at = NOW()
+            WHERE id = ?
+        ")->execute([$attempts, $uid]);
+
+        return ['ok' => false, 'code' => 'BADPWD', 'user_id' => $uid];
+    }
+
+    $status = (string)($u['status'] ?? 'PENDING');
+    if ($status === 'BLOCKED') {
+        return ['ok' => false, 'code' => 'BLOCKED', 'user_id' => $uid];
+    }
+
+    if ($status !== 'ACTIVE' || empty($u['approved_at'])) {
+        return ['ok' => false, 'code' => 'PENDING_APPROVAL', 'user_id' => $uid];
+    }
+
+    $hasEmail = trim((string)($u['email'] ?? '')) !== '';
+    if ($hasEmail && empty($u['email_verified_at'])) {
+        return ['ok' => false, 'code' => 'PENDING_EMAIL', 'user_id' => $uid];
+    }
+
+    $totpEnabled = !empty($u['totp_enabled']) && !empty($u['totp_secret']);
+
+    if ($totpEnabled) {
+        beginPending2fa($u);
+        return ['ok' => false, 'code' => 'NEEDS_2FA', 'user_id' => $uid];
+    }
+
+    completeLoginSession($pdo, $u, true);
+    return ['ok' => true, 'code' => 'REQUIRE_2FA_SETUP', 'user_id' => $uid];
+}
+
+function verifyPending2faCode(PDO $pdo, string $code): array
+{
+    $code = preg_replace('/\D+/', '', $code ?? '');
+    $u = loadPending2faUser($pdo);
+
+    if (!$u) {
+        clearPending2fa();
+        return ['ok' => false, 'code' => 'NO_PENDING_2FA'];
+    }
+
+    $secret = (string)($u['totp_secret'] ?? '');
+    if ($secret === '' || empty($u['totp_enabled'])) {
+        clearPending2fa();
+        return ['ok' => false, 'code' => 'NO_2FA_ON_ACCOUNT'];
+    }
+
+    if ($code === '' || strlen($code) !== 6) {
+        return ['ok' => false, 'code' => 'BAD_2FA_FORMAT', 'user_id' => (int)$u['id']];
+    }
+
+    $tfa = buildTwoFactorAuth();
+    $ok = $tfa->verifyCode($secret, $code, 2);
+
+    if (!$ok) {
+        return ['ok' => false, 'code' => 'BAD_2FA_CODE', 'user_id' => (int)$u['id']];
+    }
+
+    completeLoginSession($pdo, $u, false);
+    return ['ok' => true, 'code' => 'LOGIN_OK', 'user_id' => (int)$u['id']];
+}
+
+function logout(PDO $pdo): void
+{
+    auditLog($pdo, 'LOGOUT', 'auth/logout');
+
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(
+            session_name(),
+            '',
+            time() - 42000,
+            $params['path'] ?? '/',
+            $params['domain'] ?? '',
+            (bool)($params['secure'] ?? false),
+            (bool)($params['httponly'] ?? true)
+        );
+    }
+
+    session_destroy();
 }

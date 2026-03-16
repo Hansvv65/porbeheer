@@ -11,9 +11,11 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('bands', $pdo);
 
-
 if (!function_exists('h')) {
-    function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
+    function h(?string $v): string
+    {
+        return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+    }
 }
 
 $bandId = (int)($_GET['band_id'] ?? ($_POST['band_id'] ?? 0));
@@ -27,9 +29,14 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/band_keys.php band_id=' . $bandId);
 /* ===========================
    Band ophalen
 =========================== */
-$st = $pdo->prepare("SELECT id, name, primary_contact_id, secondary_contact_id FROM bands WHERE id=? AND deleted_at IS NULL");
+$st = $pdo->prepare("
+    SELECT id, name, primary_contact_id, secondary_contact_id
+    FROM bands
+    WHERE id = ? AND deleted_at IS NULL
+");
 $st->execute([$bandId]);
 $band = $st->fetch(PDO::FETCH_ASSOC);
+
 if (!$band) {
     http_response_code(404);
     exit('Band niet gevonden.');
@@ -46,7 +53,11 @@ $contacts = $pdo->prepare("
       AND (bc.band_id = ? OR c.id = ? OR c.id = ?)
     ORDER BY c.name
 ");
-$contacts->execute([$bandId, (int)($band['primary_contact_id'] ?? 0), (int)($band['secondary_contact_id'] ?? 0)]);
+$contacts->execute([
+    $bandId,
+    (int)($band['primary_contact_id'] ?? 0),
+    (int)($band['secondary_contact_id'] ?? 0)
+]);
 $contactList = $contacts->fetchAll(PDO::FETCH_ASSOC);
 
 /* ===========================
@@ -74,6 +85,8 @@ $bandLockers = $bandLockersSt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ===========================
    Beschikbaar voor ISSUE
+   Sleutels van lockers van deze band,
+   waarvan de laatste transactie NIET ISSUE is.
 =========================== */
 $availableKeys = $pdo->prepare("
     SELECT
@@ -83,86 +96,123 @@ $availableKeys = $pdo->prepare("
       k.key_slot,
       l.locker_no
     FROM `keys` k
-    JOIN lockers l ON l.id = k.locker_id AND l.deleted_at IS NULL
+    JOIN lockers l
+      ON l.id = k.locker_id
+     AND l.deleted_at IS NULL
+    LEFT JOIN key_transactions kt_last
+      ON kt_last.key_id = k.id
+     AND CONCAT(
+           DATE_FORMAT(kt_last.action_at, '%Y-%m-%d %H:%i:%s'),
+           '|',
+           LPAD(kt_last.id, 10, '0')
+         ) = (
+           SELECT MAX(
+                    CONCAT(
+                      DATE_FORMAT(kt2.action_at, '%Y-%m-%d %H:%i:%s'),
+                      '|',
+                      LPAD(kt2.id, 10, '0')
+                    )
+                  )
+           FROM key_transactions kt2
+           WHERE kt2.key_id = k.id
+         )
     WHERE k.deleted_at IS NULL
       AND k.key_type = 'LOCKER'
       AND k.lost_at IS NULL
       AND l.band_id = ?
-      AND NOT EXISTS (
-          SELECT 1
-          FROM key_transactions kt
-          WHERE kt.band_id = ?
-            AND kt.key_id = k.id
-            AND kt.action = 'ISSUE'
-            AND NOT EXISTS (
-                SELECT 1 FROM key_transactions r
-                WHERE r.band_id = kt.band_id
-                  AND r.key_id  = kt.key_id
-                  AND r.action  = 'RETURN'
-                  AND r.action_at > kt.action_at
-            )
+      AND (
+        kt_last.id IS NULL
+        OR kt_last.action <> 'ISSUE'
       )
     ORDER BY l.locker_no, k.key_slot, k.key_code
 ");
-$availableKeys->execute([$bandId, $bandId]);
+$availableKeys->execute([$bandId]);
 $availableKeyList = $availableKeys->fetchAll(PDO::FETCH_ASSOC);
 
 /* ===========================
-   Actieve uitgiftes (tabel)
+   Actieve uitgiftes
+   Laatste transactie per sleutel = ISSUE
+   én die ISSUE hoort bij deze band
 =========================== */
 $active = $pdo->prepare("
-  SELECT
-    kt.id AS issue_id,
-    k.id AS key_id,
-    k.key_code,
-    k.description,
-    k.key_slot,
-    l.locker_no,
-    c.id AS contact_id,
-    c.name AS contact_name,
-    kt.action_at AS issued_at,
-    kt.notes
-  FROM key_transactions kt
-  JOIN `keys` k ON k.id = kt.key_id AND k.deleted_at IS NULL
-  JOIN lockers l ON l.id = k.locker_id AND l.deleted_at IS NULL
-  LEFT JOIN contacts c ON c.id = kt.contact_id AND c.deleted_at IS NULL
-  WHERE kt.band_id = ?
-    AND kt.action = 'ISSUE'
-    AND NOT EXISTS (
-        SELECT 1 FROM key_transactions r
-        WHERE r.band_id = kt.band_id
-          AND r.key_id = kt.key_id
-          AND r.action = 'RETURN'
-          AND r.action_at > kt.action_at
-    )
-  ORDER BY kt.action_at DESC
+    SELECT
+      kt.id AS issue_id,
+      k.id AS key_id,
+      k.key_code,
+      k.description,
+      k.key_slot,
+      l.locker_no,
+      c.id AS contact_id,
+      c.name AS contact_name,
+      kt.action_at AS issued_at,
+      kt.notes
+    FROM key_transactions kt
+    JOIN `keys` k
+      ON k.id = kt.key_id
+     AND k.deleted_at IS NULL
+    LEFT JOIN lockers l
+      ON l.id = k.locker_id
+     AND l.deleted_at IS NULL
+    LEFT JOIN contacts c
+      ON c.id = kt.contact_id
+     AND c.deleted_at IS NULL
+    WHERE kt.band_id = ?
+      AND kt.action = 'ISSUE'
+      AND CONCAT(
+            DATE_FORMAT(kt.action_at, '%Y-%m-%d %H:%i:%s'),
+            '|',
+            LPAD(kt.id, 10, '0')
+          ) = (
+            SELECT MAX(
+                     CONCAT(
+                       DATE_FORMAT(kt2.action_at, '%Y-%m-%d %H:%i:%s'),
+                       '|',
+                       LPAD(kt2.id, 10, '0')
+                     )
+                   )
+            FROM key_transactions kt2
+            WHERE kt2.key_id = kt.key_id
+          )
+    ORDER BY kt.action_at DESC, kt.id DESC
 ");
 $active->execute([$bandId]);
 $activeList = $active->fetchAll(PDO::FETCH_ASSOC);
 
 /* ===========================
-   Keys voor RETURN (actief)
+   Keys voor RETURN
 =========================== */
 $returnKeys = $pdo->prepare("
-  SELECT
-    k.id,
-    k.key_code,
-    k.description,
-    k.key_slot,
-    l.locker_no
-  FROM key_transactions kt
-  JOIN `keys` k ON k.id = kt.key_id AND k.deleted_at IS NULL
-  JOIN lockers l ON l.id = k.locker_id AND l.deleted_at IS NULL
-  WHERE kt.band_id = ?
-    AND kt.action = 'ISSUE'
-    AND NOT EXISTS (
-        SELECT 1 FROM key_transactions r
-        WHERE r.band_id = kt.band_id
-          AND r.key_id = kt.key_id
-          AND r.action = 'RETURN'
-          AND r.action_at > kt.action_at
-    )
-  ORDER BY kt.action_at DESC
+    SELECT
+      k.id,
+      k.key_code,
+      k.description,
+      k.key_slot,
+      l.locker_no
+    FROM key_transactions kt
+    JOIN `keys` k
+      ON k.id = kt.key_id
+     AND k.deleted_at IS NULL
+    LEFT JOIN lockers l
+      ON l.id = k.locker_id
+     AND l.deleted_at IS NULL
+    WHERE kt.band_id = ?
+      AND kt.action = 'ISSUE'
+      AND CONCAT(
+            DATE_FORMAT(kt.action_at, '%Y-%m-%d %H:%i:%s'),
+            '|',
+            LPAD(kt.id, 10, '0')
+          ) = (
+            SELECT MAX(
+                     CONCAT(
+                       DATE_FORMAT(kt2.action_at, '%Y-%m-%d %H:%i:%s'),
+                       '|',
+                       LPAD(kt2.id, 10, '0')
+                     )
+                   )
+            FROM key_transactions kt2
+            WHERE kt2.key_id = kt.key_id
+          )
+    ORDER BY kt.action_at DESC, kt.id DESC
 ");
 $returnKeys->execute([$bandId]);
 $returnKeyList = $returnKeys->fetchAll(PDO::FETCH_ASSOC);
@@ -171,24 +221,24 @@ $returnKeyList = $returnKeys->fetchAll(PDO::FETCH_ASSOC);
    Historie
 =========================== */
 $hist = $pdo->prepare("
-  SELECT
-    kt.id,
-    kt.action,
-    kt.action_at,
-    kt.notes,
-    k.key_code,
-    k.key_slot,
-    l.locker_no,
-    c.name AS contact_name,
-    u.username AS performed_by
-  FROM key_transactions kt
-  JOIN `keys` k ON k.id = kt.key_id AND k.deleted_at IS NULL
-  LEFT JOIN lockers l ON l.id = k.locker_id
-  LEFT JOIN contacts c ON c.id = kt.contact_id
-  LEFT JOIN users u ON u.id = kt.performed_by_user_id
-  WHERE kt.band_id = ?
-  ORDER BY kt.action_at DESC
-  LIMIT 50
+    SELECT
+      kt.id,
+      kt.action,
+      kt.action_at,
+      kt.notes,
+      k.key_code,
+      k.key_slot,
+      l.locker_no,
+      c.name AS contact_name,
+      u.username AS performed_by
+    FROM key_transactions kt
+    JOIN `keys` k ON k.id = kt.key_id AND k.deleted_at IS NULL
+    LEFT JOIN lockers l ON l.id = k.locker_id
+    LEFT JOIN contacts c ON c.id = kt.contact_id
+    LEFT JOIN users u ON u.id = kt.performed_by_user_id
+    WHERE kt.band_id = ?
+    ORDER BY kt.action_at DESC, kt.id DESC
+    LIMIT 50
 ");
 $hist->execute([$bandId]);
 $history = $hist->fetchAll(PDO::FETCH_ASSOC);
@@ -216,8 +266,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->beginTransaction();
 
             if ($op === 'ASSIGN') {
-                // Alleen toewijzen als kast vrij is
-                $chk = $pdo->prepare("SELECT band_id FROM lockers WHERE id=? AND deleted_at IS NULL LIMIT 1");
+                $chk = $pdo->prepare("
+                    SELECT band_id
+                    FROM lockers
+                    WHERE id = ? AND deleted_at IS NULL
+                    LIMIT 1
+                ");
                 $chk->execute([$lockerId]);
                 $currentBand = $chk->fetchColumn();
 
@@ -228,7 +282,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('Deze kast is al toegewezen aan een band.');
                 }
 
-                $up = $pdo->prepare("UPDATE lockers SET band_id=? WHERE id=? AND deleted_at IS NULL AND band_id IS NULL");
+                $up = $pdo->prepare("
+                    UPDATE lockers
+                    SET band_id = ?
+                    WHERE id = ?
+                      AND deleted_at IS NULL
+                      AND band_id IS NULL
+                ");
                 $up->execute([$bandId, $lockerId]);
 
                 if ($up->rowCount() < 1) {
@@ -241,10 +301,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
 
                 $msg = 'Kast toegewezen aan band.';
-            }
-            elseif ($op === 'UNASSIGN') {
-                // Alleen vrijmaken als kast bij deze band hoort
-                $up = $pdo->prepare("UPDATE lockers SET band_id=NULL WHERE id=? AND deleted_at IS NULL AND band_id=?");
+            } elseif ($op === 'UNASSIGN') {
+                $up = $pdo->prepare("
+                    UPDATE lockers
+                    SET band_id = NULL
+                    WHERE id = ?
+                      AND deleted_at IS NULL
+                      AND band_id = ?
+                ");
                 $up->execute([$lockerId, $bandId]);
 
                 if ($up->rowCount() < 1) {
@@ -257,8 +321,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
 
                 $msg = 'Kast vrijgemaakt.';
-            }
-            else {
+            } else {
                 throw new RuntimeException('Ongeldige locker-actie.');
             }
 
@@ -267,81 +330,100 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        // mode === 'tx'
         $action = (string)($_POST['action'] ?? '');
         $keyId = (int)($_POST['key_id'] ?? 0);
         $contactId = (int)($_POST['contact_id'] ?? 0);
         $notes = trim((string)($_POST['notes'] ?? ''));
 
         if (!in_array($action, ['ISSUE','RETURN'], true)) {
-            throw new RuntimeException("Ongeldige actie.");
+            throw new RuntimeException('Ongeldige actie.');
         }
         if ($keyId <= 0) {
-            throw new RuntimeException("Kies een sleutel.");
+            throw new RuntimeException('Kies een sleutel.');
         }
         if ($action === 'ISSUE' && $contactId <= 0) {
-            throw new RuntimeException("Bij uitgifte moet een contact gekozen worden.");
+            throw new RuntimeException('Bij uitgifte moet een contact gekozen worden.');
         }
 
         $pdo->beginTransaction();
 
         if ($action === 'ISSUE') {
             $chk = $pdo->prepare("
-                SELECT 1
+                SELECT
+                  k.id
                 FROM `keys` k
-                JOIN lockers l ON l.id = k.locker_id AND l.deleted_at IS NULL
+                JOIN lockers l
+                  ON l.id = k.locker_id
+                 AND l.deleted_at IS NULL
+                LEFT JOIN key_transactions kt_last
+                  ON kt_last.key_id = k.id
+                 AND CONCAT(
+                       DATE_FORMAT(kt_last.action_at, '%Y-%m-%d %H:%i:%s'),
+                       '|',
+                       LPAD(kt_last.id, 10, '0')
+                     ) = (
+                       SELECT MAX(
+                                CONCAT(
+                                  DATE_FORMAT(kt2.action_at, '%Y-%m-%d %H:%i:%s'),
+                                  '|',
+                                  LPAD(kt2.id, 10, '0')
+                                )
+                              )
+                       FROM key_transactions kt2
+                       WHERE kt2.key_id = k.id
+                     )
                 WHERE k.id = ?
                   AND k.deleted_at IS NULL
                   AND k.key_type = 'LOCKER'
                   AND k.lost_at IS NULL
                   AND l.band_id = ?
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM key_transactions kt
-                      WHERE kt.band_id = ?
-                        AND kt.key_id = k.id
-                        AND kt.action = 'ISSUE'
-                        AND NOT EXISTS (
-                            SELECT 1 FROM key_transactions r
-                            WHERE r.band_id = kt.band_id
-                              AND r.key_id  = kt.key_id
-                              AND r.action  = 'RETURN'
-                              AND r.action_at > kt.action_at
-                        )
+                  AND (
+                    kt_last.id IS NULL
+                    OR kt_last.action <> 'ISSUE'
                   )
                 LIMIT 1
             ");
-            $chk->execute([$keyId, $bandId, $bandId]);
+            $chk->execute([$keyId, $bandId]);
             if (!$chk->fetchColumn()) {
-                throw new RuntimeException("Deze sleutel is niet beschikbaar voor uitgifte.");
+                throw new RuntimeException('Deze sleutel is niet beschikbaar voor uitgifte.');
             }
         } else {
             $chk = $pdo->prepare("
-                SELECT 1
+                SELECT kt.id
                 FROM key_transactions kt
                 WHERE kt.band_id = ?
-                  AND kt.key_id  = ?
-                  AND kt.action  = 'ISSUE'
-                  AND NOT EXISTS (
-                      SELECT 1 FROM key_transactions r
-                      WHERE r.band_id = kt.band_id
-                        AND r.key_id  = kt.key_id
-                        AND r.action  = 'RETURN'
-                        AND r.action_at > kt.action_at
-                  )
+                  AND kt.key_id = ?
+                  AND kt.action = 'ISSUE'
+                  AND CONCAT(
+                        DATE_FORMAT(kt.action_at, '%Y-%m-%d %H:%i:%s'),
+                        '|',
+                        LPAD(kt.id, 10, '0')
+                      ) = (
+                        SELECT MAX(
+                                 CONCAT(
+                                   DATE_FORMAT(kt2.action_at, '%Y-%m-%d %H:%i:%s'),
+                                   '|',
+                                   LPAD(kt2.id, 10, '0')
+                                 )
+                               )
+                        FROM key_transactions kt2
+                        WHERE kt2.key_id = kt.key_id
+                      )
                 LIMIT 1
             ");
             $chk->execute([$bandId, $keyId]);
             if (!$chk->fetchColumn()) {
-                throw new RuntimeException("Deze sleutel staat niet als actief uitgegeven. Retour kan niet.");
+                throw new RuntimeException('Deze sleutel staat niet als actief uitgegeven. Retour kan niet.');
             }
 
             if ($contactId <= 0) {
                 $lastIssue = $pdo->prepare("
                     SELECT contact_id
                     FROM key_transactions
-                    WHERE band_id=? AND key_id=? AND action='ISSUE'
-                    ORDER BY action_at DESC
+                    WHERE band_id = ?
+                      AND key_id = ?
+                      AND action = 'ISSUE'
+                    ORDER BY action_at DESC, id DESC
                     LIMIT 1
                 ");
                 $lastIssue->execute([$bandId, $keyId]);
@@ -376,69 +458,170 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
 
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         $err = $e->getMessage();
     }
 }
 
-if (isset($_GET['ok']) && !$msg) $msg = "Opgeslagen.";
+if (isset($_GET['ok']) && !$msg) {
+    $msg = 'Opgeslagen.';
+}
 ?>
 <!doctype html>
 <html lang="nl">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - Sleutels</title>
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);
-  background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
-.backdrop{min-height:100vh;background:
-  radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-  linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-  padding:26px;box-sizing:border-box;display:flex;justify-content:center;}
+:root{
+  --text:#fff;
+  --muted:rgba(255,255,255,.78);
+  --border:rgba(255,255,255,.22);
+  --glass:rgba(255,255,255,.12);
+  --glass2:rgba(255,255,255,.06);
+  --shadow:0 14px 40px rgba(0,0,0,.45);
+}
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  color:var(--text);
+  background:url('<?= h($bg) ?>') no-repeat center center fixed;
+  background-size:cover;
+}
+.backdrop{
+  min-height:100vh;
+  background:
+    radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
+    linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
+  padding:26px;
+  box-sizing:border-box;
+  display:flex;
+  justify-content:center;
+}
 .wrap{width:min(1200px,96vw);}
-.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px;}
+.topbar{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:16px;
+  flex-wrap:wrap;
+  margin-bottom:14px;
+}
 .brand h1{margin:0;font-size:28px;letter-spacing:.5px}
 .brand .sub{margin-top:6px;color:var(--muted);font-size:14px}
-.bandpill{display:inline-block;margin-top:10px;padding:10px 14px;border-radius:14px;
+.bandpill{
+  display:inline-block;
+  margin-top:10px;
+  padding:10px 14px;
+  border-radius:14px;
   border:1px solid rgba(255,255,255,.20);
   background:linear-gradient(180deg, rgba(29,53,87,.70), rgba(29,53,87,.35));
   box-shadow:0 10px 22px rgba(0,0,0,.30);
-  font-weight:900;font-size:18px;letter-spacing:.2px}
-.bandpill .small{display:block;margin-top:6px;font-weight:600;font-size:12px;color:rgba(255,255,255,.85)}
-.userbox{background:var(--glass);border:1px solid var(--border);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow);
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);min-width:260px;}
+  font-weight:900;
+  font-size:18px;
+  letter-spacing:.2px
+}
+.bandpill .small{
+  display:block;
+  margin-top:6px;
+  font-weight:600;
+  font-size:12px;
+  color:rgba(255,255,255,.85)
+}
+.userbox{
+  background:var(--glass);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:12px 14px;
+  box-shadow:var(--shadow);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  min-width:260px;
+}
 .userbox .line1{font-weight:bold}
 .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
-.panel{margin-top:10px;border-radius:20px;border:1px solid rgba(255,255,255,.18);
+.panel{
+  margin-top:10px;
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,.18);
   background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
-  box-shadow:var(--shadow);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:18px;}
+  box-shadow:var(--shadow);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  padding:18px;
+}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-@media (max-width: 960px){.grid{grid-template-columns:1fr}.userbox{min-width:unset;width:100%}}
-.card{border-radius:16px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.05));
-  padding:14px;box-shadow:0 10px 22px rgba(0,0,0,.30);backdrop-filter:blur(10px);}
+@media (max-width:960px){
+  .grid{grid-template-columns:1fr}
+  .userbox{min-width:unset;width:100%}
+}
+.card{
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.18);
+  background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.05));
+  padding:14px;
+  box-shadow:0 10px 22px rgba(0,0,0,.30);
+  backdrop-filter:blur(10px);
+}
 h2{margin:0 0 8px 0;font-size:18px}
 .small{font-size:13px;color:var(--muted)}
 .tablewrap{overflow:auto;border-radius:14px;border:1px solid rgba(255,255,255,.12)}
 table{width:100%;border-collapse:collapse}
-th,td{padding:10px;border-bottom:1px solid rgba(255,255,255,.12);text-align:left;font-size:14px;vertical-align:top}
+th,td{
+  padding:10px;
+  border-bottom:1px solid rgba(255,255,255,.12);
+  text-align:left;
+  font-size:14px;
+  vertical-align:top
+}
 th{background:rgba(255,255,255,.06)}
-a{color:#fff;text-decoration:none} a:hover{color:#ffd9b3}
-.msg{margin:10px 0;font-size:13px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08)}
+a{color:#fff;text-decoration:none;transition:color .15s ease}
+a:hover{color:#ffd9b3}
+a:visited{color:#ffe0c2}
+.msg{
+  margin:10px 0;
+  font-size:13px;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.08)
+}
 .err{color:#ffb3b3}
-input,select,textarea{width:100%;padding:10px;border-radius:12px;border:none;outline:none;margin-top:6px;box-sizing:border-box}
-label{display:block;margin-top:10px;font-size:13px;color:var(--muted);font-weight:700}
-.btn{display:inline-block;margin-top:12px;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.22);
-  background:linear-gradient(180deg, var(--glass), var(--glass2));color:#fff;font-weight:800;cursor:pointer}
+input,select,textarea{
+  width:100%;
+  padding:10px;
+  border-radius:12px;
+  border:none;
+  outline:none;
+  margin-top:6px;
+  box-sizing:border-box
+}
+label{
+  display:block;
+  margin-top:10px;
+  font-size:13px;
+  color:var(--muted);
+  font-weight:700
+}
+.btn{
+  display:inline-block;
+  margin-top:12px;
+  padding:10px 14px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.22);
+  background:linear-gradient(180deg, var(--glass), var(--glass2));
+  color:#fff;
+  font-weight:800;
+  cursor:pointer
+}
 .btn:hover{border-color:rgba(255,255,255,.38);transform:translateY(-1px)}
 .btn-sm{padding:6px 10px;font-weight:800;border-radius:10px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media (max-width: 720px){.row{grid-template-columns:1fr}}
+@media (max-width:720px){.row{grid-template-columns:1fr}}
 .hint{margin-top:6px;font-size:12px;color:rgba(255,255,255,.70)}
-  a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
 </style>
 
 <script>
@@ -447,22 +630,20 @@ function toggleKeyOptions(){
   var action = actionEl ? actionEl.value : 'ISSUE';
   var isIssue = (action === 'ISSUE');
 
-  // contact verplicht bij ISSUE
   var contactWrap = document.getElementById('contactWrap');
   var contactSel  = document.getElementById('contact_id');
   if (contactWrap) contactWrap.style.display = isIssue ? '' : 'none';
   if (contactSel)  contactSel.required = isIssue;
 
-  // key opties: disable op basis van data-mode
   var sel = document.getElementById('key_id');
   if (!sel) return;
 
   var current = sel.value;
   var currentOk = false;
 
-  for (var i=0; i<sel.options.length; i++){
+  for (var i = 0; i < sel.options.length; i++){
     var opt = sel.options[i];
-    var mode = opt.getAttribute('data-mode'); // ISSUE / RETURN / null
+    var mode = opt.getAttribute('data-mode');
     if (!mode) { opt.disabled = false; continue; }
     var ok = (mode === action);
     opt.disabled = !ok;
@@ -502,7 +683,6 @@ function toggleKeyOptions(){
 
     <div class="grid">
 
-      <!-- Links: actieve sleutels -->
       <div class="card">
         <h2>Actieve sleutels</h2>
         <div class="small">Uitgegeven en nog niet retour gemeld.</div>
@@ -515,7 +695,7 @@ function toggleKeyOptions(){
                 <td>
                   <strong><?= h($a['key_code']) ?></strong>
                   <div class="small">
-                    Kast: <?= h((string)$a['locker_no']) ?> · sleutel <?= h((string)$a['key_slot']) ?>
+                    Kast: <?= h((string)($a['locker_no'] ?? '—')) ?> · sleutel <?= h((string)($a['key_slot'] ?? '—')) ?>
                     <?php if (!empty($a['description'])): ?> · <?= h((string)$a['description']) ?><?php endif; ?>
                   </div>
                 </td>
@@ -532,7 +712,6 @@ function toggleKeyOptions(){
         </div>
       </div>
 
-      <!-- Rechts: kasten toewijzen + transactie -->
       <div class="card">
         <h2>POR kast toewijzen</h2>
         <div class="small">Koppel een vrije kast aan deze band (kasten kun je niet toevoegen/verwijderen).</div>
@@ -631,7 +810,7 @@ function toggleKeyOptions(){
                 <optgroup label="Actief (voor retour)">
                   <?php foreach ($returnKeyList as $k): ?>
                     <option data-mode="RETURN" value="<?= (int)$k['id'] ?>">
-                      <?= h((string)$k['locker_no']) ?> · sleutel <?= h((string)$k['key_slot']) ?>
+                      <?= h((string)($k['locker_no'] ?? '—')) ?> · sleutel <?= h((string)($k['key_slot'] ?? '—')) ?>
                       — <?= h((string)$k['key_code']) ?>
                       <?= !empty($k['description']) ? ' - ' . h((string)$k['description']) : '' ?>
                     </option>
@@ -641,7 +820,7 @@ function toggleKeyOptions(){
               </select>
 
               <?php if (!$availableKeyList && !$returnKeyList): ?>
-                <div class="hint">Geen sleutels beschikbaar. Koppel eerst een kast aan deze band, en zorg dat er sleutels in `keys` aan die kast hangen.</div>
+                <div class="hint">Geen sleutels beschikbaar. Koppel eerst een kast aan deze band en zorg dat er sleutels in `keys` aan die kast hangen.</div>
               <?php endif; ?>
             </div>
           </div>

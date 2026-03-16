@@ -11,14 +11,40 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('bands', $pdo);
 
+if (!function_exists('h')) {
+    function h(?string $v): string
+    {
+        return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+    }
+}
 
-function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-
-function normDate(string $s): string {
+function normDate(string $s): string
+{
     $s = trim($s);
-    if ($s === '') return '';
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return '';
+    if ($s === '') {
+        return '';
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) {
+        return '';
+    }
     return $s;
+}
+
+function getSetting(PDO $pdo, string $key, string $default = '0.00'): string
+{
+    $st = $pdo->prepare("SELECT `value` FROM app_settings WHERE `key` = ? LIMIT 1");
+    $st->execute([$key]);
+    $val = $st->fetchColumn();
+    return $val !== false ? (string)$val : $default;
+}
+
+function normalizePriceString(string $value): string
+{
+    $value = trim(str_replace(',', '.', $value));
+    if ($value === '' || !is_numeric($value)) {
+        return '0.00';
+    }
+    return number_format((float)$value, 2, '.', '');
 }
 
 $err = null;
@@ -28,19 +54,47 @@ $isEdit = $id > 0;
 
 $band = null;
 
-/* Contacten */
 $contacts = $pdo->query("
     SELECT id, name
     FROM contacts
     WHERE deleted_at IS NULL
     ORDER BY name
-")->fetchAll();
+")->fetchAll(PDO::FETCH_ASSOC);
 
-/* Band ophalen (ook soft-deleted kunnen openen voor herstel/hard delete) */
+/*
+ * Vaste lockerset uit database ophalen.
+ * Er worden GEEN nieuwe lockers aangemaakt vanuit deze pagina.
+ */
+$lockerRows = $pdo->query("
+    SELECT locker_no
+    FROM lockers
+    WHERE deleted_at IS NULL
+    GROUP BY locker_no
+    ORDER BY locker_no
+")->fetchAll(PDO::FETCH_ASSOC);
+
+$validLockerNos = array_map(
+    static fn(array $r): string => (string)$r['locker_no'],
+    $lockerRows
+);
+
+$subscriptionPrice = normalizePriceString(getSetting($pdo, 'subscription_month_price', '0.00'));
+$incidentalPrice   = normalizePriceString(getSetting($pdo, 'daypart_price', '0.00'));
+
+$priceForContractType = static function (string $contractType) use ($subscriptionPrice, $incidentalPrice): string {
+    if ($contractType === 'ABONNEMENT') {
+        return $subscriptionPrice;
+    }
+    if ($contractType === 'INCIDENTEEL') {
+        return $incidentalPrice;
+    }
+    return '0.00';
+};
+
 if ($isEdit) {
-    $stmt = $pdo->prepare("SELECT * FROM bands WHERE id=?");
+    $stmt = $pdo->prepare("SELECT * FROM bands WHERE id = ?");
     $stmt->execute([$id]);
-    $band = $stmt->fetch();
+    $band = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$band) {
         header("Location: /admin/bands.php");
@@ -50,73 +104,81 @@ if ($isEdit) {
 
 $isDeleted = $isEdit && !empty($band['deleted_at']);
 
-/* ---- Actueel contract opnieuw ophalen (altijd) ---- */
 $currentContract = null;
 if ($isEdit) {
-    // "Laatste" contract: einddatum meest recent, bij gelijk: hoogste id
     $stmt = $pdo->prepare("
         SELECT *
         FROM band_contracts
-        WHERE band_id=?
-        ORDER BY end_date DESC, id DESC
+        WHERE band_id = ?
+        ORDER BY
+          CASE
+            WHEN end_date IS NULL THEN 0
+            WHEN end_date >= CURDATE() THEN 1
+            ELSE 2
+          END ASC,
+          COALESCE(end_date, '9999-12-31') DESC,
+          id DESC
         LIMIT 1
     ");
     $stmt->execute([$id]);
-    $currentContract = $stmt->fetch() ?: null;
+    $currentContract = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
 
 $currentContractId = $currentContract ? (int)$currentContract['id'] : 0;
 
-/* ---- Herhaling actueel bepalen vanuit band_planner_events van dit contract ---- */
 $defaultRepeatDaypart = '';
 $defaultRepeatWeekday = 0;
 
 if ($isEdit && $currentContractId > 0) {
-    // Pak liefst het eerstvolgende event (>= vandaag), anders de eerste ooit
     $stmt = $pdo->prepare("
         SELECT daypart, event_date
         FROM band_planner_events
-        WHERE contract_id=?
+        WHERE contract_id = ?
         ORDER BY
           CASE WHEN event_date >= CURDATE() THEN 0 ELSE 1 END,
-          event_date ASC
+          event_date ASC,
+          id ASC
         LIMIT 1
     ");
     $stmt->execute([$currentContractId]);
-    $ev = $stmt->fetch();
+    $ev = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($ev) {
         $defaultRepeatDaypart = (string)$ev['daypart'];
-        $defaultRepeatWeekday = (int)(new DateTimeImmutable((string)$ev['event_date']))->format('N'); // 1..7
+        $defaultRepeatWeekday = (int)(new DateTimeImmutable((string)$ev['event_date']))->format('N');
     }
 }
 
-/* ---- Lockers actueel ophalen ---- */
 $currentLockers = [];
 if ($isEdit) {
     $stmt = $pdo->prepare("
         SELECT locker_no
         FROM lockers
-        WHERE band_id=? AND deleted_at IS NULL
+        WHERE band_id = ? AND deleted_at IS NULL
         ORDER BY locker_no
     ");
     $stmt->execute([$id]);
-    $currentLockers = array_map('intval', array_column($stmt->fetchAll(), 'locker_no'));
+    $currentLockers = array_map(
+        static fn($v): string => (string)$v,
+        array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'locker_no')
+    );
 }
 
-/* ---------- Acties: soft delete / restore / hard delete ---------- */
+/* ---------- Acties: delete / restore ---------- */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] !== 'save') {
     requireCsrf($_POST['csrf'] ?? null);
 
     $action = (string)($_POST['action'] ?? '');
 
     try {
-        if ($id <= 0) throw new RuntimeException('Ongeldig band-id.');
+        if ($id <= 0) {
+            throw new RuntimeException('Ongeldig band-id.');
+        }
 
         $pdo->beginTransaction();
 
         if ($action === 'soft_delete') {
-            $pdo->prepare("UPDATE bands SET deleted_at = NOW() WHERE id=? AND deleted_at IS NULL")->execute([$id]);
+            $pdo->prepare("UPDATE bands SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL")->execute([$id]);
             auditLog($pdo, 'BAND_SOFT_DELETE', 'bands id='.$id);
 
             $pdo->commit();
@@ -125,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         if ($action === 'restore') {
-            $pdo->prepare("UPDATE bands SET deleted_at = NULL WHERE id=? AND deleted_at IS NOT NULL")->execute([$id]);
+            $pdo->prepare("UPDATE bands SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL")->execute([$id]);
             auditLog($pdo, 'BAND_RESTORE', 'bands id='.$id);
 
             $pdo->commit();
@@ -134,21 +196,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         if ($action === 'hard_delete') {
-            $st = $pdo->prepare("SELECT deleted_at FROM bands WHERE id=?");
+            $st = $pdo->prepare("SELECT deleted_at FROM bands WHERE id = ?");
             $st->execute([$id]);
-            $b = $st->fetch();
-            if (!$b) throw new RuntimeException('Band niet gevonden.');
-            if (empty($b['deleted_at'])) throw new RuntimeException('Hard delete kan alleen nadat de band eerst soft-deleted is.');
+            $b = $st->fetch(PDO::FETCH_ASSOC);
 
-            // Planning opschonen
-            $pdo->prepare("DELETE FROM schedule WHERE band_id=?")->execute([$id]);
-            $pdo->prepare("DELETE FROM band_planner_events WHERE band_id=?")->execute([$id]);
+            if (!$b) {
+                throw new RuntimeException('Band niet gevonden.');
+            }
+            if (empty($b['deleted_at'])) {
+                throw new RuntimeException('Hard delete kan alleen nadat de band eerst soft-deleted is.');
+            }
 
-            // Lockers vrijgeven
-            $pdo->prepare("UPDATE lockers SET band_id = NULL WHERE band_id=? AND deleted_at IS NULL")->execute([$id]);
+            $pdo->prepare("DELETE FROM schedule WHERE band_id = ?")->execute([$id]);
+            $pdo->prepare("DELETE FROM band_planner_events WHERE band_id = ?")->execute([$id]);
+            $pdo->prepare("DELETE FROM band_contracts WHERE band_id = ?")->execute([$id]);
 
-            // Band definitief weg
-            $pdo->prepare("DELETE FROM bands WHERE id=?")->execute([$id]);
+            $pdo->prepare("UPDATE lockers SET band_id = NULL WHERE band_id = ? AND deleted_at IS NULL")->execute([$id]);
+
+            $pdo->prepare("DELETE FROM bands WHERE id = ?")->execute([$id]);
 
             auditLog($pdo, 'BAND_HARD_DELETE', 'bands id='.$id);
 
@@ -158,112 +223,189 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         throw new RuntimeException('Onbekende actie.');
-
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         $err = $e->getMessage();
     }
 }
 
-/* ---------- Formwaarden: altijd actueel vullen ---------- */
-/*
- * Regels:
- * - Als er een POST save is (en we tonen dezelfde pagina door error), dan POST leidend
- * - Anders DB leidend
- */
 $isPostSave = ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? 'save') === 'save'));
 
 $form = [
-    'name'             => $band['name'] ?? '',
-    'primary_contact'  => (string)($band['primary_contact_id'] ?? ''),
-    'secondary_contact'=> (string)($band['secondary_contact_id'] ?? ''),
-    'lockers'          => $currentLockers,
+    'name'              => (string)($band['name'] ?? ''),
+    'city'              => (string)($band['city'] ?? ''),
+    'primary_contact'   => (string)($band['primary_contact_id'] ?? ''),
+    'secondary_contact' => (string)($band['secondary_contact_id'] ?? ''),
+    'lockers'           => $currentLockers,
 
-    'contract_type'    => $currentContract['contract_type'] ?? '',
-    'contract_start'   => $currentContract['start_date'] ?? date('Y-m-d'),
-    'contract_end'     => $currentContract['end_date'] ?? '',
-    'monthly_fee'      => isset($currentContract['monthly_fee']) ? (string)$currentContract['monthly_fee'] : '0.00',
+    'contract_type'     => (string)($currentContract['contract_type'] ?? ''),
+    'contract_start'    => (string)($currentContract['start_date'] ?? date('Y-m-d')),
+    'contract_end'      => (string)($currentContract['end_date'] ?? ''),
+    'monthly_fee'       => $currentContract
+        ? (string)($currentContract['monthly_fee'] ?? $priceForContractType((string)$currentContract['contract_type']))
+        : '0.00',
 
-    'repeat_daypart'   => $defaultRepeatDaypart,
-    'repeat_weekday'   => (string)$defaultRepeatWeekday,
+    'repeat_daypart'    => $defaultRepeatDaypart,
+    'repeat_weekday'    => (string)$defaultRepeatWeekday,
 ];
 
 if ($isPostSave) {
-    // overschrijf met POST zodat user input behouden blijft
     $form['name'] = trim((string)($_POST['name'] ?? $form['name']));
+    $form['city'] = trim((string)($_POST['city'] ?? $form['city']));
     $form['primary_contact'] = (string)($_POST['primary_contact'] ?? $form['primary_contact']);
     $form['secondary_contact'] = (string)($_POST['secondary_contact'] ?? $form['secondary_contact']);
 
     $lockers = $_POST['lockers'] ?? [];
-    if (!is_array($lockers)) $lockers = [];
-    $lockers = array_values(array_unique(array_map('intval', $lockers)));
-    $lockers = array_values(array_filter($lockers, fn($n) => $n >= 1 && $n <= 15));
+    if (!is_array($lockers)) {
+        $lockers = [];
+    }
+
+    $lockers = array_map(static fn($v): string => trim((string)$v), $lockers);
+    $lockers = array_values(array_unique(array_filter(
+        $lockers,
+        static fn(string $v): bool => $v !== '' && $v !== '0'
+    )));
+    $lockers = array_values(array_filter(
+        $lockers,
+        static fn(string $v): bool => in_array($v, $validLockerNos, true)
+    ));
+
     $form['lockers'] = $lockers;
 
     $form['contract_type']  = trim((string)($_POST['contract_type'] ?? $form['contract_type']));
     $form['contract_start'] = normDate((string)($_POST['contract_start'] ?? $form['contract_start'])) ?: $form['contract_start'];
     $form['contract_end']   = normDate((string)($_POST['contract_end'] ?? $form['contract_end']));
-    $form['monthly_fee']    = (string)($_POST['monthly_fee'] ?? $form['monthly_fee']);
 
     $form['repeat_daypart'] = trim((string)($_POST['repeat_daypart'] ?? $form['repeat_daypart']));
     $rw = (int)($_POST['repeat_weekday'] ?? 0);
     $form['repeat_weekday'] = (string)(($rw >= 1 && $rw <= 7) ? $rw : 0);
+
+    $form['monthly_fee'] = $priceForContractType($form['contract_type']);
 }
 
-/* ---------- Opslaan (save) ---------- */
 if ($isPostSave) {
     requireCsrf($_POST['csrf'] ?? null);
 
     $name      = trim((string)$form['name']);
+    $city      = trim((string)$form['city']);
     $primary   = (int)($form['primary_contact'] ?: 0);
     $secondary = (int)($form['secondary_contact'] ?: 0);
 
     $lockers = $form['lockers'];
-    if (!is_array($lockers)) $lockers = [];
+    if (!is_array($lockers)) {
+        $lockers = [];
+    }
 
     $contractType  = trim((string)$form['contract_type']);
     $contractStart = normDate((string)$form['contract_start']);
     $contractEnd   = normDate((string)$form['contract_end']);
-    $monthlyFee    = (float)($form['monthly_fee'] ?? 0);
 
-    if ($contractStart === '') $contractStart = date('Y-m-d');
+    $allowedContractTypes = ['ABONNEMENT', 'INCIDENTEEL'];
+    if ($contractType !== '' && !in_array($contractType, $allowedContractTypes, true)) {
+        $contractType = '';
+    }
+
+    $monthlyFee = (float)$priceForContractType($contractType);
+
+    if ($contractStart === '') {
+        $contractStart = date('Y-m-d');
+    }
 
     $repeatDaypart = trim((string)$form['repeat_daypart']);
     $repeatWeekday = (int)($form['repeat_weekday'] ?? 0);
-    if ($repeatWeekday < 1 || $repeatWeekday > 7) $repeatWeekday = 0;
+    if ($repeatWeekday < 1 || $repeatWeekday > 7) {
+        $repeatWeekday = 0;
+    }
 
     $daypartTimes = [
-        'OCHTEND' => ['09:00:00', '12:00:00'],
-        'MIDDAG'  => ['13:00:00', '17:00:00'],
-        'AVOND'   => ['19:00:00', '22:30:00'],
+        'OCHTEND' => ['11:00:00', '15:00:00'],
+        'MIDDAG'  => ['15:00:00', '19:00:00'],
+        'AVOND'   => ['19:00:00', '23:00:00'],
     ];
 
-    $hasContractInput = ($contractType !== '' || $contractEnd !== '' || ((string)($_POST['monthly_fee'] ?? '') !== ''));
+    $hasContractInput = ($contractType !== '' || $contractEnd !== '');
+    $hasRepeatInput   = ($repeatDaypart !== '' || $repeatWeekday > 0);
     $contractComplete = ($contractType !== '' && $contractEnd !== '');
 
     try {
+        if ($name === '') {
+            throw new RuntimeException('Vul een bandnaam in.');
+        }
+
+        if (($hasContractInput || $hasRepeatInput) && !$contractComplete) {
+            throw new RuntimeException('Vul voor een contract minimaal contracttype en contract-einddatum in.');
+        }
+
+        if ($contractType !== '' && !in_array($contractType, $allowedContractTypes, true)) {
+            throw new RuntimeException('Ongeldig contracttype.');
+        }
+
+        if ($repeatDaypart !== '' && !isset($daypartTimes[$repeatDaypart])) {
+            throw new RuntimeException('Ongeldig repeterend dagdeel.');
+        }
+
+        if ($repeatDaypart !== '' && $repeatWeekday <= 0) {
+            throw new RuntimeException('Kies ook een weekdag voor het repeterende dagdeel.');
+        }
+
+        if ($repeatWeekday > 0 && $repeatDaypart === '') {
+            throw new RuntimeException('Kies ook een dagdeel voor de herhaling.');
+        }
+
+        if ($contractComplete) {
+            $start = new DateTimeImmutable($contractStart);
+            $end   = new DateTimeImmutable($contractEnd);
+            if ($start > $end) {
+                throw new RuntimeException('Contractdatum vanaf mag niet na contractdatum tot liggen.');
+            }
+        }
+
+        /*
+         * Alle gekozen lockers moeten echt bestaan in de vaste lockerset.
+         */
+        foreach ($lockers as $lockerNo) {
+            if (!in_array((string)$lockerNo, $validLockerNos, true)) {
+                throw new RuntimeException("Ongeldige porkast geselecteerd: {$lockerNo}");
+            }
+        }
+
         $pdo->beginTransaction();
 
-        /* Band opslaan */
         if (!$isEdit) {
             $stmt = $pdo->prepare("
-                INSERT INTO bands (name, primary_contact_id, secondary_contact_id)
-                VALUES (?,?,?)
+                INSERT INTO bands (name, city, primary_contact_id, secondary_contact_id)
+                VALUES (?, ?, ?, ?)
             ");
-            $stmt->execute([$name, $primary ?: null, $secondary ?: null]);
+            $stmt->execute([
+                $name,
+                $city !== '' ? $city : null,
+                $primary ?: null,
+                $secondary ?: null
+            ]);
             $id = (int)$pdo->lastInsertId();
             $isEdit = true;
         } else {
             $stmt = $pdo->prepare("
                 UPDATE bands
-                SET name=?, primary_contact_id=?, secondary_contact_id=?
-                WHERE id=?
+                SET name = ?, city = ?, primary_contact_id = ?, secondary_contact_id = ?
+                WHERE id = ?
             ");
-            $stmt->execute([$name, $primary ?: null, $secondary ?: null, $id]);
+            $stmt->execute([
+                $name,
+                $city !== '' ? $city : null,
+                $primary ?: null,
+                $secondary ?: null,
+                $id
+            ]);
         }
 
-        /* Lockers bijwerken: eerst vrijgeven, dan claimen */
-        $pdo->prepare("UPDATE lockers SET band_id = NULL WHERE band_id=? AND deleted_at IS NULL")->execute([$id]);
+        /*
+         * Eerst huidige band-lockers vrijgeven, daarna bestaande lockers opnieuw koppelen.
+         * BELANGRIJK: hier worden geen nieuwe lockers toegevoegd.
+         */
+        $pdo->prepare("UPDATE lockers SET band_id = NULL WHERE band_id = ? AND deleted_at IS NULL")->execute([$id]);
 
         if ($lockers) {
             $chk = $pdo->prepare("
@@ -273,62 +415,86 @@ if ($isPostSave) {
                   AND band_id IS NOT NULL AND band_id <> ?
                 LIMIT 1
             ");
+
             $upd = $pdo->prepare("
                 UPDATE lockers
                 SET band_id = ?
                 WHERE locker_no = ? AND deleted_at IS NULL
             ");
-            $ins = $pdo->prepare("INSERT INTO lockers (band_id, locker_no) VALUES (?,?)");
-            $exists = $pdo->prepare("SELECT id FROM lockers WHERE locker_no=? AND deleted_at IS NULL LIMIT 1");
 
-            foreach ($lockers as $lno) {
-                $chk->execute([$lno, $id]);
-                $conf = $chk->fetch();
+            $exists = $pdo->prepare("
+                SELECT id
+                FROM lockers
+                WHERE locker_no = ? AND deleted_at IS NULL
+                LIMIT 1
+            ");
+
+            foreach ($lockers as $lockerNo) {
+                $chk->execute([$lockerNo, $id]);
+                $conf = $chk->fetch(PDO::FETCH_ASSOC);
                 if ($conf) {
-                    throw new RuntimeException("Kast {$lno} is al toegewezen aan een andere band (band_id={$conf['band_id']}).");
+                    throw new RuntimeException("Kast {$lockerNo} is al toegewezen aan een andere band (band_id={$conf['band_id']}).");
                 }
-                $exists->execute([$lno]);
-                $ex = $exists->fetch();
-                if ($ex) $upd->execute([$id, $lno]);
-                else     $ins->execute([$id, $lno]);
+
+                $exists->execute([$lockerNo]);
+                $ex = $exists->fetch(PDO::FETCH_ASSOC);
+                if (!$ex) {
+                    throw new RuntimeException("Kast {$lockerNo} bestaat niet in de vaste kastenset.");
+                }
+
+                $upd->execute([$id, $lockerNo]);
             }
         }
 
-        /* Contract + events */
         $contractId = $currentContractId ?: null;
 
         if ($contractComplete) {
             if ($contractId) {
                 $pdo->prepare("
                     UPDATE band_contracts
-                    SET contract_type=?, start_date=?, end_date=?, monthly_fee=?
-                    WHERE id=? AND band_id=?
-                ")->execute([$contractType, $contractStart, $contractEnd, $monthlyFee, (int)$contractId, $id]);
+                    SET contract_type = ?, start_date = ?, end_date = ?, monthly_fee = ?
+                    WHERE id = ? AND band_id = ?
+                ")->execute([
+                    $contractType,
+                    $contractStart,
+                    $contractEnd,
+                    $monthlyFee,
+                    (int)$contractId,
+                    $id
+                ]);
             } else {
                 $pdo->prepare("
                     INSERT INTO band_contracts (band_id, contract_type, start_date, end_date, monthly_fee)
-                    VALUES (?,?,?,?,?)
-                ")->execute([$id, $contractType, $contractStart, $contractEnd, $monthlyFee]);
+                    VALUES (?, ?, ?, ?, ?)
+                ")->execute([
+                    $id,
+                    $contractType,
+                    $contractStart,
+                    $contractEnd,
+                    $monthlyFee
+                ]);
                 $contractId = (int)$pdo->lastInsertId();
             }
 
-            if ($contractId && $repeatDaypart !== '' && isset($daypartTimes[$repeatDaypart]) && $repeatWeekday > 0) {
+            $pdo->prepare("DELETE FROM band_planner_events WHERE contract_id = ?")->execute([(int)$contractId]);
+
+            if ($repeatDaypart !== '' && isset($daypartTimes[$repeatDaypart]) && $repeatWeekday > 0) {
                 [$startTime, $endTime] = $daypartTimes[$repeatDaypart];
 
                 $start = new DateTimeImmutable($contractStart);
                 $end   = new DateTimeImmutable($contractEnd);
 
-                $pdo->prepare("DELETE FROM band_planner_events WHERE contract_id=?")->execute([(int)$contractId]);
-
                 if ($start <= $end) {
                     $insEvent = $pdo->prepare("
                         INSERT INTO band_planner_events
                             (band_id, contract_id, event_date, daypart, start_time, end_time)
-                        VALUES (?,?,?,?,?,?)
+                        VALUES (?, ?, ?, ?, ?, ?)
                     ");
 
                     for ($d = $start; $d <= $end; $d = $d->modify('+1 day')) {
-                        if ((int)$d->format('N') !== $repeatWeekday) continue;
+                        if ((int)$d->format('N') !== $repeatWeekday) {
+                            continue;
+                        }
 
                         $insEvent->execute([
                             $id,
@@ -341,10 +507,9 @@ if ($isPostSave) {
                     }
                 }
             }
-        } else {
-            if ($hasContractInput) {
-                // je kan hier later validatie-errors tonen
-            }
+        } elseif ($currentContractId > 0) {
+            $pdo->prepare("DELETE FROM band_planner_events WHERE contract_id = ?")->execute([$currentContractId]);
+            $pdo->prepare("DELETE FROM band_contracts WHERE id = ? AND band_id = ?")->execute([$currentContractId, $id]);
         }
 
         auditLog($pdo, 'SAVE', 'band_edit id='.$id);
@@ -352,17 +517,19 @@ if ($isPostSave) {
         $pdo->commit();
         header("Location: /admin/band_detail.php?id=".$id);
         exit;
-
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         $err = $e->getMessage();
     }
 }
 
-/* UI helpers: lockers selectie UI */
 $maxLockerSelects = 3;
 $lockerSelections = $form['lockers'];
-while (count($lockerSelections) < $maxLockerSelects) $lockerSelections[] = 0;
+while (count($lockerSelections) < $maxLockerSelects) {
+    $lockerSelections[] = '0';
+}
 $lockerSelections = array_slice($lockerSelections, 0, $maxLockerSelects);
 
 $days = [
@@ -372,7 +539,7 @@ $days = [
     4 => 'Donderdag',
     5 => 'Vrijdag',
     6 => 'Zaterdag',
-    7 => 'Zondag'
+    7 => 'Zondag',
 ];
 ?>
 <!DOCTYPE html>
@@ -395,7 +562,7 @@ body{
   margin:0;
   font-family:Arial,sans-serif;
   color:var(--text);
-  background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
+  background:url('<?= h($bg) ?>') no-repeat center center fixed;
   background-size:cover;
 }
 .backdrop{
@@ -450,13 +617,14 @@ input,select{
   border-radius:12px;
   border:none;
   outline:none;
+  box-sizing:border-box;
 }
 .grid2{
   display:grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns:1fr 1fr;
   gap:12px;
 }
-@media (max-width: 900px){
+@media (max-width:900px){
   .grid2{grid-template-columns:1fr;}
 }
 .btn{
@@ -470,8 +638,8 @@ input,select{
   font-weight:bold;
 }
 .btn:hover{border-color:rgba(255,255,255,.5)}
-.btn-danger{ border-color: rgba(255,120,120,.55); }
-.btn-primary{ border-color: rgba(120,180,255,.55); }
+.btn-danger{border-color:rgba(255,120,120,.55);}
+.btn-primary{border-color:rgba(120,180,255,.55);}
 .smallnote{
   margin-top:8px;
   color:var(--muted);
@@ -479,11 +647,11 @@ input,select{
   line-height:1.4;
 }
 .alert{
-  margin: 10px 0 16px;
-  padding: 12px 14px;
-  border: 1px solid rgba(255,255,255,.25);
-  border-radius: 12px;
-  background: rgba(255,255,255,.10);
+  margin:10px 0 16px;
+  padding:12px 14px;
+  border:1px solid rgba(255,255,255,.25);
+  border-radius:12px;
+  background:rgba(255,255,255,.10);
 }
 .badge{
   display:inline-block;
@@ -491,7 +659,7 @@ input,select{
   border-radius:999px;
   font-size:12px;
   border:1px solid rgba(255,255,255,.25);
-  background: rgba(255,90,90,.18);
+  background:rgba(255,90,90,.18);
   margin-left:10px;
 }
 .actions{
@@ -501,11 +669,35 @@ input,select{
   margin-top:18px;
 }
 .actions form{margin:0;}
-  a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
+a{color:#fff;text-decoration:none;transition:color .15s ease}
+a:hover{color:#ffd9b3}
+a:visited{color:#ffe0c2}
+.readonly{
+  background:rgba(255,255,255,.10);
+  color:#fff;
+}
 </style>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const select = document.querySelector('select[name="contract_type"]');
+  const tariff = document.getElementById('tariff_display');
+
+  const prices = {
+    'ABONNEMENT': '<?= h($subscriptionPrice) ?>',
+    'INCIDENTEEL': '<?= h($incidentalPrice) ?>'
+  };
+
+  function updateTariff() {
+    const v = select ? select.value : '';
+    tariff.value = prices[v] || '0.00';
+  }
+
+  if (select && tariff) {
+    select.addEventListener('change', updateTariff);
+    updateTariff();
+  }
+});
+</script>
 </head>
 <body>
 
@@ -515,7 +707,7 @@ input,select{
 <div class="topbar">
   <div class="brand">
     <h1>
-      <?= $isEdit ? "Band bewerken" : "Nieuwe band" ?>
+      <?= $isEdit ? 'Band bewerken' : 'Nieuwe band' ?>
       <?php if ($isDeleted): ?><span class="badge">Verwijderd</span><?php endif; ?>
     </h1>
     <div class="sub">
@@ -550,11 +742,15 @@ input,select{
   <input name="name" required value="<?= h($form['name']) ?>" <?= $isDeleted ? 'disabled' : '' ?>>
 </label>
 
+<label>Stad
+  <input name="city" value="<?= h($form['city']) ?>" <?= $isDeleted ? 'disabled' : '' ?>>
+</label>
+
 <div class="grid2">
   <label>Eerste contact
     <select name="primary_contact" <?= $isDeleted ? 'disabled' : '' ?>>
       <option value="">-- geen --</option>
-      <?php foreach($contacts as $c): ?>
+      <?php foreach ($contacts as $c): ?>
         <option value="<?= (int)$c['id'] ?>" <?= ((string)$form['primary_contact'] === (string)$c['id']) ? 'selected' : '' ?>>
           <?= h($c['name']) ?>
         </option>
@@ -565,7 +761,7 @@ input,select{
   <label>Tweede contact
     <select name="secondary_contact" <?= $isDeleted ? 'disabled' : '' ?>>
       <option value="">-- geen --</option>
-      <?php foreach($contacts as $c): ?>
+      <?php foreach ($contacts as $c): ?>
         <option value="<?= (int)$c['id'] ?>" <?= ((string)$form['secondary_contact'] === (string)$c['id']) ? 'selected' : '' ?>>
           <?= h($c['name']) ?>
         </option>
@@ -576,16 +772,18 @@ input,select{
 
 <label>Porkasten (selecteer tot <?= (int)$maxLockerSelects ?> kasten)
   <div class="grid2">
-    <?php for ($k=0; $k<$maxLockerSelects; $k++): ?>
+    <?php for ($k = 0; $k < $maxLockerSelects; $k++): ?>
       <select name="lockers[]" <?= $isDeleted ? 'disabled' : '' ?>>
         <option value="0">-- geen --</option>
-        <?php for ($i=1; $i<=15; $i++): ?>
-          <option value="<?= $i ?>" <?= ($lockerSelections[$k] === $i) ? 'selected' : '' ?>>Kast <?= $i ?></option>
-        <?php endfor; ?>
+        <?php foreach ($validLockerNos as $lockerNo): ?>
+          <option value="<?= h($lockerNo) ?>" <?= ((string)$lockerSelections[$k] === (string)$lockerNo) ? 'selected' : '' ?>>
+            Kast <?= h($lockerNo) ?>
+          </option>
+        <?php endforeach; ?>
       </select>
     <?php endfor; ?>
   </div>
-  <div class="smallnote">Dubbele keuzes worden samengevoegd. Een kast kan maar aan één band tegelijk hangen.</div>
+  <div class="smallnote">Er worden alleen bestaande vaste lockers gebruikt. Deze pagina maakt geen nieuwe kasten aan.</div>
 </label>
 
 <hr style="border:none;border-top:1px solid rgba(255,255,255,.12);margin:18px 0">
@@ -608,8 +806,17 @@ input,select{
   </label>
 </div>
 
-<label>Maandbedrag
-  <input type="number" step="0.01" name="monthly_fee" value="<?= h((string)$form['monthly_fee']) ?>" <?= $isDeleted ? 'disabled' : '' ?>>
+<label>Tarief uit instellingen
+  <input
+    type="text"
+    id="tariff_display"
+    class="readonly"
+    value="<?= h((string)$form['monthly_fee']) ?>"
+    readonly
+  >
+  <div class="smallnote">
+    Abonnement per maand: € <?= h($subscriptionPrice) ?> · Incidenteel per dagdeel: € <?= h($incidentalPrice) ?>
+  </div>
 </label>
 
 <hr style="border:none;border-top:1px solid rgba(255,255,255,.12);margin:18px 0">
@@ -617,9 +824,9 @@ input,select{
 <label>Repeterend dagdeel (planner)
   <select name="repeat_daypart" <?= $isDeleted ? 'disabled' : '' ?>>
     <option value="">-- geen --</option>
-    <option value="OCHTEND" <?= ($form['repeat_daypart'] === 'OCHTEND') ? 'selected' : '' ?>>Ochtend (09:00–12:00)</option>
-    <option value="MIDDAG"  <?= ($form['repeat_daypart'] === 'MIDDAG')  ? 'selected' : '' ?>>Middag (13:00–17:00)</option>
-    <option value="AVOND"   <?= ($form['repeat_daypart'] === 'AVOND')   ? 'selected' : '' ?>>Avond (19:00–22:30)</option>
+    <option value="OCHTEND" <?= ($form['repeat_daypart'] === 'OCHTEND') ? 'selected' : '' ?>>Ochtend (11:00–15:00)</option>
+    <option value="MIDDAG"  <?= ($form['repeat_daypart'] === 'MIDDAG')  ? 'selected' : '' ?>>Middag (15:00–19:00)</option>
+    <option value="AVOND"   <?= ($form['repeat_daypart'] === 'AVOND')   ? 'selected' : '' ?>>Avond (19:00–23:00)</option>
   </select>
 </label>
 

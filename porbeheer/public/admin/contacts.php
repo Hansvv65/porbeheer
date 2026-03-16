@@ -11,32 +11,54 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
 
+if (!function_exists('h')) {
+    function h(?string $v): string
+    {
+        return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+    }
+}
 
-function h(?string $v): string { return htmlspecialchars((string)$v); }
+$filter = (string)($_GET['filter'] ?? 'all');
+if (!in_array($filter, ['all', 'noband', 'withband'], true)) {
+    $filter = 'all';
+}
 
-$filter = $_GET['filter'] ?? 'all';
-
-/* Query met soft delete + band filter */
+/*
+|--------------------------------------------------------------------------
+| Contacts + bands
+| Bands is leading:
+| - primary_contact_id
+| - secondary_contact_id
+|--------------------------------------------------------------------------
+*/
 $sql = "
-  SELECT c.id, c.name, c.email, c.phone,
-         GROUP_CONCAT(b.name ORDER BY b.name SEPARATOR ', ') AS bands,
-         COUNT(b.id) AS band_count
+  SELECT
+    c.id,
+    c.name,
+    c.email,
+    c.phone,
+    GROUP_CONCAT(DISTINCT b.name ORDER BY b.name SEPARATOR ', ') AS bands,
+    COUNT(DISTINCT b.id) AS band_count
   FROM contacts c
-  LEFT JOIN band_contacts bc ON bc.contact_id = c.id
-  LEFT JOIN bands b ON b.id = bc.band_id AND b.deleted_at IS NULL
+  LEFT JOIN bands b
+    ON b.deleted_at IS NULL
+   AND (
+        b.primary_contact_id = c.id
+        OR b.secondary_contact_id = c.id
+   )
   WHERE c.deleted_at IS NULL
-  GROUP BY c.id
+  GROUP BY c.id, c.name, c.email, c.phone
 ";
 
 if ($filter === 'noband') {
-    $sql .= " HAVING band_count = 0";
+    $sql .= " HAVING COUNT(DISTINCT b.id) = 0";
 } elseif ($filter === 'withband') {
-    $sql .= " HAVING band_count > 0";
+    $sql .= " HAVING COUNT(DISTINCT b.id) > 0";
 }
 
 $sql .= " ORDER BY c.name";
 
-$contacts = $pdo->query($sql)->fetchAll();
+$contacts = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/contacts.php');
 ?>
@@ -61,7 +83,8 @@ body{
  margin:0;
  font-family:Arial,sans-serif;
  color:var(--text);
-  background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
+ background:url('<?= h($bg) ?>') no-repeat center center fixed;
+ background-size:cover;
 }
 
 .backdrop{
@@ -98,6 +121,9 @@ body{
  backdrop-filter:blur(10px);
  min-width:260px;
 }
+
+.userbox .line1{font-weight:bold}
+.userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
 
 .panel{
  margin-top:10px;
@@ -153,6 +179,7 @@ th,td{
  padding:10px;
  border-bottom:1px solid rgba(255,255,255,.12);
  text-align:left;
+ vertical-align:top;
 }
 
 th{background:rgba(255,255,255,.05)}
@@ -167,8 +194,14 @@ th{background:rgba(255,255,255,.05)}
 }
 
 .ok{color:#b8ffb8}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
+
+a{
+ color:#fff;
+ text-decoration:none;
+ transition:color .15s ease;
+}
+a:hover{color:#ffd9b3}
+a:visited{color:#ffe0c2}
 </style>
 </head>
 <body>
@@ -179,10 +212,11 @@ th{background:rgba(255,255,255,.05)}
  <div class="brand">
    <h1>Contacten</h1>
    <div class="sub">
-     <a href="/admin/dashboard.php">Dashboard</a> · 
+     <a href="/admin/dashboard.php">Dashboard</a> ·
      <a href="/admin/contact_edit.php">Nieuw contact</a>
    </div>
  </div>
+
  <div class="userbox">
     <div class="line1">Ingelogd: <?= h($user['username'] ?? '') ?> • Rol: <?= h((string)$role) ?></div>
     <div class="line2">
@@ -199,14 +233,11 @@ th{background:rgba(255,255,255,.05)}
 <?php endif; ?>
 
 <div class="panelhead" style="justify-content:center;">
-
   <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
-    <?php $f = $filter; ?>
-    <a class="btn <?= $f==='all' ? 'active' : '' ?>" href="?filter=all">Alle</a>
-    <a class="btn <?= $f==='noband' ? 'active' : '' ?>" href="?filter=noband">Zonder band</a>
-    <a class="btn <?= $f==='withband' ? 'active' : '' ?>" href="?filter=withband">Met band</a>
+    <a class="btn <?= $filter === 'all' ? 'active' : '' ?>" href="?filter=all">Alle</a>
+    <a class="btn <?= $filter === 'noband' ? 'active' : '' ?>" href="?filter=noband">Zonder band</a>
+    <a class="btn <?= $filter === 'withband' ? 'active' : '' ?>" href="?filter=withband">Met band</a>
   </div>
-
 </div>
 
 <div class="tablewrap">
@@ -222,6 +253,11 @@ th{background:rgba(255,255,255,.05)}
 </thead>
 <tbody>
 
+<?php if (!$contacts): ?>
+<tr>
+  <td colspan="5">Geen contacten gevonden.</td>
+</tr>
+<?php else: ?>
 <?php foreach ($contacts as $c): ?>
 <tr>
  <td><?= h($c['name']) ?></td>
@@ -233,6 +269,7 @@ th{background:rgba(255,255,255,.05)}
  </td>
 </tr>
 <?php endforeach; ?>
+<?php endif; ?>
 
 </tbody>
 </table>

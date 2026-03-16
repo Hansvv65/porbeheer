@@ -52,9 +52,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $primary = primaryRoleFrom($roles, $priority);
 
       $stmt = $pdo->prepare("
-        INSERT INTO users (username, email, password_hash, role, status, active, created_at, approved_at)
-        VALUES (?, ?, ?, ?, 'ACTIVE', 1, NOW(), NOW())
-      ");
+      INSERT INTO users (username, email, password_hash, role, status, active, created_at, approved_at, email_verified_at, updated_at)
+      VALUES (?, ?, ?, ?, 'ACTIVE', 1, NOW(), NOW(), NOW(), NOW())
+    ");
+
       $stmt->execute([$username, $email, $hash, $primary]);
 
       $userId = (int)$pdo->lastInsertId();

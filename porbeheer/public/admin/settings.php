@@ -380,6 +380,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/settings.php');
         </div>
 
         <div class="row">
+          <div class="btn"><a href="/admin/tech-test.php">Tech test</a></div>
           <a class="btn" href="/admin/beheer.php">Terug naar beheer</a>
           <button class="btn ok" type="submit">Opslaan</button>
         </div>

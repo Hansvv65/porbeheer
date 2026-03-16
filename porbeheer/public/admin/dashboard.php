@@ -168,6 +168,19 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
   .userbox a:hover{
   text-decoration:underline;
   }
+  .userbox .line2{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-top:4px;
+  font-size:13px;
+  color:var(--muted);
+}
+
+.userbox .navright{
+  text-align:right;
+  white-space:nowrap;
+}
   </style>
 </head>
 <body>
@@ -180,8 +193,21 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
         </div>
 
         <div class="userbox"> 
-          <div class="line1"> Hallo <a href="/admin/account.php"><?= h($user['username'] ?? '') ?></a> · Jouw rol is <?= h($role) ?></div>
-          <div class="line2"> <a href="/admin/dashboard.php">Dashboard</a> • <a href="/logout.php">Uitloggen</a></div>
+          <div class="line1">
+            Hallo <a href="/admin/account.php"><?= h($user['username'] ?? '') ?></a> · 
+            Jouw rol is <?= h($role) ?>
+          </div>
+
+          <div class="line2">
+            <div class="navleft">
+              <a href="/admin/dashboard.php">Dashboard</a> • 
+              <a href="/logout.php">Uitloggen</a>
+            </div>
+
+            <div class="navright">
+              <a href="/changelog.php">Versie <?= h($config['app']['version'] ?? '') ?></a>
+            </div>
+          </div>
         </div>
       </div>
 

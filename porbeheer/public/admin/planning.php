@@ -11,21 +11,26 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('schedule', $pdo);
 
-
 auditLog($pdo, 'PAGE_VIEW', 'admin/planning.php');
 
-$ym = $_GET['ym'] ?? date('Y-m');
-if (!preg_match('/^\d{4}-\d{2}$/', $ym)) {
-    $ym = date('Y-m');
-}
-[$year, $month] = array_map('intval', explode('-', $ym));
+/*
+|--------------------------------------------------------------------------
+| 2-weken navigatie
+|--------------------------------------------------------------------------
+| offset = aantal weken vanaf huidige week
+| 0  = huidige week + volgende week
+| -1 = vorige week + huidige week
+| 1  = volgende week + week daarna
+*/
+$offset = (int)($_GET['offset'] ?? 0);
 
-$firstDay = new DateTime("$year-$month-01");
-$start = (clone $firstDay)->modify('monday this week');
-$end   = (clone $firstDay)->modify('last day of this month')->modify('sunday this week');
+$today = new DateTimeImmutable('today');
+$weekStart = $today->modify('monday this week')->modify(($offset * 7) . ' days');
+$rangeStart = $weekStart;
+$rangeEnd   = $weekStart->modify('+13 days');
 
-$prevYm = (clone $firstDay)->modify('-1 month')->format('Y-m');
-$nextYm = (clone $firstDay)->modify('+1 month')->format('Y-m');
+$prevOffset = $offset - 1;
+$nextOffset = $offset + 1;
 
 /**
  * Check of band_planner_events bestaat, zodat planning nooit crasht.
@@ -54,7 +59,7 @@ $stmt = $pdo->prepare("
   WHERE s.date BETWEEN ? AND ?
     AND b.deleted_at IS NULL
 ");
-$stmt->execute([$start->format('Y-m-d'), $end->format('Y-m-d')]);
+$stmt->execute([$rangeStart->format('Y-m-d'), $rangeEnd->format('Y-m-d')]);
 $data = $stmt->fetchAll();
 
 /**
@@ -74,7 +79,7 @@ if ($hasContractEvents) {
       WHERE e.event_date BETWEEN ? AND ?
         AND b.deleted_at IS NULL
     ");
-    $stmt->execute([$start->format('Y-m-d'), $end->format('Y-m-d')]);
+    $stmt->execute([$rangeStart->format('Y-m-d'), $rangeEnd->format('Y-m-d')]);
     $data = array_merge($data, $stmt->fetchAll());
 }
 
@@ -122,6 +127,31 @@ $maandenVoluit = [
     12 => 'december',
 ];
 
+$timeslots = [
+    'OCHTEND' => '11:00 - 15:00',
+    'MIDDAG'  => '15:00 - 19:00',
+    'AVOND'   => '19:00 - 23:00',
+];
+
+function weekTitle(DateTimeImmutable $monday, array $maandenVoluit): string
+{
+    $sunday = $monday->modify('+6 days');
+
+    $startDay   = (int)$monday->format('j');
+    $startMonth = (int)$monday->format('n');
+    $startYear  = (int)$monday->format('Y');
+
+    $endDay     = (int)$sunday->format('j');
+    $endMonth   = (int)$sunday->format('n');
+    $endYear    = (int)$sunday->format('Y');
+
+    return 'Week ' . $monday->format('W') . ' · '
+        . $startDay . ' ' . $maandenVoluit[$startMonth] . ' ' . $startYear
+        . ' t/m '
+        . $endDay . ' ' . $maandenVoluit[$endMonth] . ' ' . $endYear;
+}
+
+$headerTitle = weekTitle($weekStart, $maandenVoluit) . ' + ' . weekTitle($weekStart->modify('+7 days'), $maandenVoluit);
 ?>
 <!doctype html>
 <html lang="nl">
@@ -144,7 +174,8 @@ body{
 margin:0;
 font-family:Arial,sans-serif;
 color:var(--text);
-  background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
+background:url('<?= h($bg) ?>') no-repeat center center fixed;
+background-size:cover;
 }
 
 .backdrop{
@@ -158,7 +189,7 @@ display:flex;
 justify-content:center;
 }
 
-.wrap{width:min(1200px,96vw);}
+.wrap{width:min(1400px,96vw);}
 
 .topbar{
 display:flex;
@@ -205,6 +236,12 @@ flex-wrap:wrap;
 gap:10px;
 }
 
+.navleft{
+display:flex;
+flex-wrap:wrap;
+gap:8px;
+}
+
 .btn{
 text-decoration:none;
 color:#fff;
@@ -218,117 +255,139 @@ background:linear-gradient(180deg,var(--glass),var(--glass2));
 .btn:hover{border-color:rgba(255,255,255,.38)}
 
 .calendar{
-  display:grid;
-  grid-template-columns:repeat(7, minmax(0,1fr));
-  gap:10px;
+display:grid;
+grid-template-columns:repeat(7, minmax(0,1fr));
+gap:10px;
 }
 
 /* 1x per week, over de volle breedte */
 .weekrow{
-  grid-column:1 / -1;
-  padding:10px 12px;
-  border-radius:14px;
-  border:1px solid rgba(255,255,255,.18);
-  background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
-  font-weight:bold;
-  letter-spacing:.2px;
-  color:rgba(255,255,255,.92);
+grid-column:1 / -1;
+padding:10px 12px;
+border-radius:14px;
+border:1px solid rgba(255,255,255,.18);
+background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
+font-weight:bold;
+letter-spacing:.2px;
+color:rgba(255,255,255,.92);
 }
 
 .day{
-  border-radius:16px;
-  border:1px solid rgba(255,255,255,.18);
-  background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.05));
-  padding:10px;
-  min-height:130px;
-  position:relative;
+border-radius:16px;
+border:1px solid rgba(255,255,255,.18);
+background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.05));
+padding:10px;
+min-height:155px;
+position:relative;
 }
 
-.day.out{opacity:.4}
-
 .datefull{
-  font-weight:bold;
-  margin-bottom:8px;
-  padding-bottom:6px;
-  border-bottom:1px solid rgba(255,255,255,.12);
-  font-size:13px;
-  color:rgba(255,255,255,.92);
+font-weight:bold;
+margin-bottom:8px;
+padding-bottom:6px;
+border-bottom:1px solid rgba(255,255,255,.12);
+font-size:13px;
+color:rgba(255,255,255,.92);
 }
 
 /* SLOT */
 a.slot{
-  display:flex;
-  justify-content:space-between;
-  flex-direction:column;
-  align-items:flex-start;
-  gap:4px;
-  padding:8px 9px;
-  border-radius:12px;
-  background:rgba(0,0,0,.22);
-  border:1px solid rgba(255,255,255,.08);
-  text-decoration:none;
-  color:#fff;
-  margin-bottom:6px;
+display:flex;
+justify-content:space-between;
+flex-direction:column;
+align-items:flex-start;
+gap:4px;
+padding:8px 9px;
+border-radius:12px;
+background:rgba(0,0,0,.22);
+border:1px solid rgba(255,255,255,.08);
+text-decoration:none;
+color:#fff;
+margin-bottom:6px;
+min-height:54px;
 }
 
 a.slot:hover{
-  border-color:rgba(255,255,255,.35);
-  background:rgba(255,255,255,.08);
+border-color:rgba(255,255,255,.35);
+background:rgba(255,255,255,.08);
 }
 
 a.slot .ts{
-  font-size:11px;
-  letter-spacing:.4px;
-  text-transform:uppercase;
-  color:rgba(255,255,255,.82);
-  padding:3px 8px;
-  border-radius:999px;
-  background:rgba(255,255,255,.10);
-  border:1px solid rgba(255,255,255,.10);
-  flex:0 0 auto;
+font-size:11px;
+letter-spacing:.2px;
+color:rgba(255,255,255,.82);
+padding:3px 8px;
+border-radius:999px;
+background:rgba(255,255,255,.10);
+border:1px solid rgba(255,255,255,.10);
+flex:0 0 auto;
 }
 
 a.slot .val{
-  font-size:13px;
-  font-weight:bold;
-  width:100%;
-  display:-webkit-box;
-  -webkit-line-clamp:2;
-  -webkit-box-orient:vertical;
-  overflow:hidden;
+font-size:13px;
+font-weight:bold;
+width:100%;
+display:-webkit-box;
+-webkit-line-clamp:2;
+-webkit-box-orient:vertical;
+overflow:hidden;
 }
 
 a.slot.empty .val{
-  color:rgba(255,255,255,.72);
-  font-weight:bold;
+color:rgba(255,255,255,.72);
+font-weight:bold;
 }
 
 a.slot.booked .val{
-  color:rgba(255,255,255,.95);
+color:rgba(255,255,255,.95);
 }
 
 /* contract subtiel */
 a.slot.contract{
-  border-color:rgba(255,255,255,.16);
-  background:rgba(0,0,0,.18);
+border-color:rgba(255,255,255,.16);
+background:rgba(0,0,0,.18);
 }
 
 .day.today{
-  border:1px solid rgba(255, 217, 179, .65);
-  background:
-    linear-gradient(180deg,
-      rgba(255,217,179,.22),
-      rgba(255,255,255,.08)
-    );
-  box-shadow:
-    0 0 0 1px rgba(255,217,179,.25),
-    0 0 18px rgba(255,217,179,.18),
-    var(--shadow);
+border:1px solid rgba(255, 217, 179, .65);
+background:
+linear-gradient(180deg,
+rgba(255,217,179,.22),
+rgba(255,255,255,.08)
+);
+box-shadow:
+0 0 0 1px rgba(255,217,179,.25),
+0 0 18px rgba(255,217,179,.18),
+var(--shadow);
 }
-  a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
 
+.todayBadge{
+display:inline-block;
+margin-left:8px;
+padding:2px 8px;
+border-radius:999px;
+font-size:11px;
+font-weight:bold;
+background:rgba(255,217,179,.22);
+border:1px solid rgba(255,217,179,.35);
+color:#fff2de;
+}
+
+a{color:#fff;text-decoration:none;transition:color .15s ease}
+a:hover{color:#ffd9b3}
+a:visited{color:#ffe0c2}
+
+@media (max-width: 900px){
+  .calendar{
+    grid-template-columns:repeat(2, minmax(0,1fr));
+  }
+}
+
+@media (max-width: 640px){
+  .calendar{
+    grid-template-columns:1fr;
+  }
+}
 </style>
 </head>
 <body>
@@ -339,7 +398,7 @@ a.slot.contract{
 <div class="topbar">
   <div class="brand">
     <h1>Planning</h1>
-    <div class="sub">Maandoverzicht</div>
+    <div class="sub">Twee weken overzicht</div>
   </div>
 
   <div class="userbox">
@@ -351,28 +410,36 @@ a.slot.contract{
 <div class="panel">
 
   <div class="nav">
-    <div>
-      <a class="btn" href="?ym=<?= h($prevYm) ?>">← Vorige</a>
-      <a class="btn" href="?ym=<?= h(date('Y-m')) ?>">Vandaag</a>
-      <a class="btn" href="?ym=<?= h($nextYm) ?>">Volgende →</a>
+    <div class="navleft">
+      <a class="btn" href="?offset=<?= h((string)$prevOffset) ?>">← Vorige</a>
+      <a class="btn" href="?offset=0">Huidige</a>
+      <a class="btn" href="?offset=<?= h((string)$nextOffset) ?>">Volgende →</a>
+      <a class="btn" href="?offset=0#today">Vandaag</a>
     </div>
-    <strong><?= h($firstDay->format('F Y')) ?></strong>
+    <strong><?= h($headerTitle) ?></strong>
   </div>
 
   <div class="calendar">
   <?php
-  $cursor = clone $start;
-  while ($cursor <= $end):
+  $cursor = $rangeStart;
+
+  while ($cursor <= $rangeEnd):
 
       $weekNo = $cursor->format('W');
+      $weekStartLabel = $cursor;
+      $weekEndLabel = $cursor->modify('+6 days');
       ?>
-      <div class="weekrow">Week <?= h($weekNo) ?></div>
+      <div class="weekrow">
+        Week <?= h($weekNo) ?> ·
+        <?= h($weekStartLabel->format('j')) ?> <?= h($maandenVoluit[(int)$weekStartLabel->format('n')]) ?>
+        t/m
+        <?= h($weekEndLabel->format('j')) ?> <?= h($maandenVoluit[(int)$weekEndLabel->format('n')]) ?> <?= h($weekEndLabel->format('Y')) ?>
+      </div>
       <?php
 
       for ($i = 0; $i < 7; $i++):
           $dateStr = $cursor->format('Y-m-d');
-          $isOut   = $cursor->format('m') != sprintf('%02d', $month);
-          $isToday = ($dateStr === (new DateTime('today'))->format('Y-m-d'));
+          $isToday = ($dateStr === $today->format('Y-m-d'));
 
           $dayNr   = (int)$cursor->format('N');
           $day     = (int)$cursor->format('j');
@@ -380,10 +447,13 @@ a.slot.contract{
 
           $fullLabel = ucfirst($dagenVoluit[$dayNr] . ' ' . $day . ' ' . $maandenVoluit[$monthNr]);
           ?>
-          <div class="day <?= $isOut?'out':'' ?> <?= $isToday?'today':'' ?>">
-              <div class="datefull"><?= h($fullLabel) ?></div>
+          <div class="day <?= $isToday ? 'today' : '' ?>" <?= $isToday ? 'id="today"' : '' ?>>
+              <div class="datefull">
+                <?= h($fullLabel) ?>
+                <?php if ($isToday): ?><span class="todayBadge">Vandaag</span><?php endif; ?>
+              </div>
 
-              <?php foreach (['OCHTEND','MIDDAG','AVOND'] as $ts): ?>
+              <?php foreach ($timeslots as $ts => $slotLabel): ?>
                   <?php
                   $hasBooking = isset($bookings[$dateStr][$ts]);
 
@@ -395,7 +465,6 @@ a.slot.contract{
                           $cls   = "slot booked";
                           $label = (string)$row['band_name'];
                       } else {
-                          // Contract-slot: laat hem naar planning_edit gaan zodat je makkelijk kunt overrulen
                           $href  = "/admin/planning_edit.php?date=" . urlencode($dateStr) . "&timeslot=" . urlencode($ts);
                           $cls   = "slot booked contract";
                           $label = (string)$row['band_name'] . " (contract)";
@@ -407,13 +476,13 @@ a.slot.contract{
                   }
                   ?>
                   <a class="<?= h($cls) ?>" href="<?= h($href) ?>">
-                      <span class="ts"><?= h(ucfirst(strtolower($ts))) ?></span>
+                      <span class="ts"><?= h($slotLabel) ?></span>
                       <span class="val"><?= h($label) ?></span>
                   </a>
               <?php endforeach; ?>
           </div>
           <?php
-          $cursor->modify('+1 day');
+          $cursor = $cursor->modify('+1 day');
       endfor;
 
   endwhile;

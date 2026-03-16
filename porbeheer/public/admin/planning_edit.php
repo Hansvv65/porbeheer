@@ -35,11 +35,10 @@ try {
 /**
  * Contract-context (voor date+timeslot view)
  */
-$contractSlot = null;   // ['band_id'=>..,'band_name'=>..,'contract_id'=>..,'event_id'=>..]
-$contractNote = null;   // string
+$contractSlot = null;
+$contractNote = null;
 
 if ($isEdit) {
-    // Edit bestaand schedule record
     $st = $pdo->prepare("
       SELECT s.*, b.name AS band_name
       FROM schedule s
@@ -53,14 +52,12 @@ if ($isEdit) {
         exit;
     }
 } else {
-    // Nieuw: date+timeslot vanuit querystring (of default)
     $row = [
         'date'     => (string)($_GET['date'] ?? date('Y-m-d')),
         'timeslot' => (string)($_GET['timeslot'] ?? 'AVOND'),
         'band_id'  => 0,
     ];
 
-    // Als contract events bestaan: zoek of dit slot automatisch bezet is
     if ($hasContractEvents) {
         $date = (string)$row['date'];
         $ts   = (string)$row['timeslot'];
@@ -83,9 +80,7 @@ if ($isEdit) {
             $contractSlot = $st->fetch() ?: null;
 
             if ($contractSlot) {
-                // Preselect de band zodat “Opslaan” meteen een override maakt
                 $row['band_id'] = (int)$contractSlot['band_id'];
-
                 $contractNote = "Dit dagdeel is automatisch bezet via contract: " . (string)$contractSlot['band_name'] . ".";
             }
         }
@@ -112,8 +107,8 @@ function dayHeader(DateTimeInterface $dt): string
     $days = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
     $months = [1=>'januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 
-    $w = (int)$dt->format('w');   // 0=zo
-    $n = (int)$dt->format('n');   // 1-12
+    $w = (int)$dt->format('w');
+    $n = (int)$dt->format('n');
     $d = (int)$dt->format('j');
     $y = (int)$dt->format('Y');
 
@@ -125,14 +120,16 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/planning_edit.php'.($isEdit ? " id=$id" : '')
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf($_POST['csrf'] ?? null);
 
-    $date    = (string)($_POST['date'] ?? '');
-    $timeslot= (string)($_POST['timeslot'] ?? '');
-    $bandId  = (int)($_POST['band_id'] ?? 0);
-    $do      = (string)($_POST['do'] ?? 'save');
+    $date     = (string)($_POST['date'] ?? '');
+    $timeslot = (string)($_POST['timeslot'] ?? '');
+    $bandId   = (int)($_POST['band_id'] ?? 0);
+    $do       = (string)($_POST['do'] ?? 'save');
 
     try {
         if ($do === 'delete') {
-            if (!$isEdit) throw new RuntimeException("Niet gevonden.");
+            if (!$isEdit) {
+                throw new RuntimeException("Niet gevonden.");
+            }
             $del = $pdo->prepare("DELETE FROM schedule WHERE id=?");
             $del->execute([$id]);
             auditLog($pdo, 'DELETE', 'schedule', ['id'=>$id]);
@@ -144,13 +141,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new RuntimeException("Vul datum, dagdeel en band in.");
         }
 
-        // dubbele check: alleen binnen schedule (contract events tellen niet als schedule-dup)
         $chk = $pdo->prepare("SELECT id FROM schedule WHERE date=? AND timeslot=? LIMIT 1");
         $chk->execute([$date, $timeslot]);
         $existingId = (int)($chk->fetchColumn() ?? 0);
 
         if ($existingId && (!$isEdit || $existingId !== $id)) {
-            throw new RuntimeException("Dit dagdeel is al ingepland. Klik op de bandnaam in de kalender om te wijzigen.");
+            throw new RuntimeException("Dit dagdeel is al ingepland. Klik op de bandnaam in de planning om te wijzigen.");
         }
 
         if ($isEdit) {
@@ -158,7 +154,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $up->execute([$bandId, $date, $timeslot, $id]);
             auditLog($pdo, 'UPDATE', 'schedule', ['id'=>$id,'band_id'=>$bandId,'date'=>$date,'timeslot'=>$timeslot]);
         } else {
-            // nieuw schedule record (override)
             $ins = $pdo->prepare("
               INSERT INTO schedule (band_id, parent_id, date, timeslot, repeat_type, repeat_until)
               VALUES (?, NULL, ?, ?, 'NONE', NULL)
@@ -179,12 +174,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $dt = new DateTime((string)$row['date']);
 $header = dayHeader($dt);
 
-// nette label voor dagdeel
-$tsLabel = [
-    'OCHTEND' => 'Ochtend',
-    'MIDDAG'  => 'Middag',
-    'AVOND'   => 'Avond'
-][(string)$row['timeslot']] ?? (string)$row['timeslot'];
+$tsLabels = [
+    'OCHTEND' => 'Ochtend · 11:00 - 15:00',
+    'MIDDAG'  => 'Middag · 15:00 - 19:00',
+    'AVOND'   => 'Avond · 19:00 - 23:00',
+];
+
+$tsLabel = $tsLabels[(string)$row['timeslot']] ?? (string)$row['timeslot'];
 
 ?>
 <!doctype html>
@@ -195,8 +191,13 @@ $tsLabel = [
 <title>Planning wijzigen</title>
 <style>
 :root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);
-    background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  color:var(--text);
+  background:url('<?= h($bg) ?>') no-repeat center center fixed;
+  background-size:cover;
+}
 .backdrop{min-height:100vh;background:
   radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
   linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
@@ -225,11 +226,9 @@ input,select{width:100%;padding:10px;border-radius:12px;border:none;outline:none
 .info{color:rgba(255,255,255,.92)}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:720px){.row{grid-template-columns:1fr}}
-a{color:#fff} a:hover{color:#ffd9b3}
-  a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
+a{color:#fff;text-decoration:none;transition:color .15s ease}
+a:hover{color:#ffd9b3}
+a:visited{color:#ffe0c2}
 </style>
 </head>
 <body>
@@ -244,8 +243,8 @@ a{color:#fff} a:hover{color:#ffd9b3}
       <div class="userbox">
         <div class="line1"><?= h($user['username'] ?? '') ?> · <?= h($role) ?></div>
         <div class="line2">
-          <a href="/admin/dashboard.php">Dashboard</a> • 
-          <a href="/admin/planning.php">Planning</a> • 
+          <a href="/admin/dashboard.php">Dashboard</a> •
+          <a href="/admin/planning.php">Planning</a> •
           <a href="/logout.php">Uitloggen</a>
         </div>
       </div>
@@ -260,7 +259,7 @@ a{color:#fff} a:hover{color:#ffd9b3}
           <div style="margin-top:6px;">
             <a href="/admin/band_detail.php?id=<?= (int)$contractSlot['band_id'] ?>">→ Band detail openen</a>
           </div>
-          <div style="margin-top:6px;color:<?= h('rgba(255,255,255,.78)') ?>;">
+          <div style="margin-top:6px;color:rgba(255,255,255,.78);">
             Als je hieronder opslaat, maak je een <strong>handmatige booking</strong> die vóórgaat op het contract.
           </div>
         </div>
@@ -277,11 +276,9 @@ a{color:#fff} a:hover{color:#ffd9b3}
 
           <label>Dagdeel
             <select name="timeslot" required>
-              <?php foreach (['OCHTEND','MIDDAG','AVOND'] as $t): ?>
-                <option value="<?= h($t) ?>" <?= ((string)$row['timeslot'] === $t) ? 'selected' : '' ?>>
-                  <?= h($t) ?>
-                </option>
-              <?php endforeach; ?>
+              <option value="OCHTEND" <?= ((string)$row['timeslot'] === 'OCHTEND') ? 'selected' : '' ?>>Ochtend · 11:00 - 15:00</option>
+              <option value="MIDDAG"  <?= ((string)$row['timeslot'] === 'MIDDAG')  ? 'selected' : '' ?>>Middag · 15:00 - 19:00</option>
+              <option value="AVOND"   <?= ((string)$row['timeslot'] === 'AVOND')   ? 'selected' : '' ?>>Avond · 19:00 - 23:00</option>
             </select>
           </label>
         </div>

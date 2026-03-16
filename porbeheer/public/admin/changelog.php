@@ -9,31 +9,94 @@ requireRole(['ADMIN','BEHEER']);
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
-$bg   = themeImage('settings', $pdo);
+$bg   = function_exists('themeImage') ? themeImage('settings', $pdo) : '/assets/images/admin-a.png';
 
-function h(?string $v): string {
-    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+if (!function_exists('changelogBadgeClass')) {
+    function changelogBadgeClass(string $type): string {
+        return match ($type) {
+            'NEW'      => 'badge new',
+            'IMPROVE'  => 'badge improve',
+            'FIX'      => 'badge fix',
+            'SECURITY' => 'badge security',
+            'IDEA'     => 'badge idea',
+            default    => 'badge',
+        };
+    }
 }
 
-function changelogBadgeClass(string $type): string {
-    return match ($type) {
-        'NEW'      => 'badge new',
-        'IMPROVE'  => 'badge improve',
-        'FIX'      => 'badge fix',
-        'SECURITY' => 'badge security',
-        'IDEA'     => 'badge idea',
-        default    => 'badge',
-    };
+if (!function_exists('changelogTypeLabel')) {
+    function changelogTypeLabel(string $type): string {
+        return match ($type) {
+            'NEW'      => 'Nieuw',
+            'IMPROVE'  => 'Verbeteringen',
+            'FIX'      => 'Fixes',
+            'SECURITY' => 'Security',
+            'IDEA'     => 'Wensenlijst',
+            default    => $type,
+        };
+    }
 }
 
-auditLog($pdo, 'PAGE_VIEW', 'admin/changelog.php');
+if (!function_exists('compareVersionDesc')) {
+    function compareVersionDesc(array $a, array $b): int {
+        return version_compare((string)$b['version'], (string)$a['version']);
+    }
+}
+
+if (!function_exists('isLockedVersionValue')) {
+    function isLockedVersionValue(string $version, string $appVersion): bool {
+        return version_compare($version, $appVersion, '<=');
+    }
+}
+
+$appVersion = (string)($config['app']['version'] ?? '0.0.0');
+$allowedTypes = ['NEW', 'IMPROVE', 'FIX', 'SECURITY', 'IDEA'];
+
+auditLog($pdo, 'PAGE_VIEW', 'admin/changelog.php', [
+    'app_version' => $appVersion,
+]);
 
 $errors = [];
 $success = null;
 
-$allowedTypes = ['NEW', 'IMPROVE', 'FIX', 'SECURITY', 'IDEA'];
+/* versies laden voor validatie */
+$versions = $pdo->query("
+    SELECT id, version, release_date, created_at
+    FROM changelog_versions
+")->fetchAll(PDO::FETCH_ASSOC);
 
-/* nieuwe versie toevoegen */
+usort($versions, 'compareVersionDesc');
+
+$versionsById = [];
+foreach ($versions as $v) {
+    $versionsById[(int)$v['id']] = $v;
+}
+
+$futureVersions = array_values(array_filter(
+    $versions,
+    fn(array $v): bool => version_compare((string)$v['version'], $appVersion, '>')
+));
+
+$currentVersionRow = null;
+foreach ($versions as $v) {
+    if ((string)$v['version'] === $appVersion) {
+        $currentVersionRow = $v;
+        break;
+    }
+}
+
+/* helper editable target */
+$canAssignToVersionId = function (?int $versionId) use ($versionsById, $appVersion): bool {
+    if ($versionId === null) {
+        return true;
+    }
+    if (!isset($versionsById[$versionId])) {
+        return false;
+    }
+    return version_compare((string)$versionsById[$versionId]['version'], $appVersion, '>');
+};
+
+/* nieuwe toekomstige versie toevoegen */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_version'])) {
     requireCsrf($_POST['csrf'] ?? '');
 
@@ -42,6 +105,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_version'])) {
 
     if ($version === '') {
         $errors[] = 'Vul een versienummer in.';
+    } elseif (!preg_match('/^[0-9]+(\.[0-9]+){1,3}$/', $version)) {
+        $errors[] = 'Gebruik een geldig versienummer, bijvoorbeeld 1.2.2 of 1.3.0.';
+    } elseif (!version_compare($version, $appVersion, '>')) {
+        $errors[] = 'Alleen toekomstige versies groter dan de huidige versie mogen worden toegevoegd.';
     }
 
     if ($releaseDate !== '') {
@@ -66,7 +133,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_version'])) {
             ");
             $stmt->execute([$version, $releaseDate]);
 
-            auditLog($pdo, 'CHANGELOG_VERSION_ADD', 'Versie toegevoegd: ' . $version);
+            auditLog($pdo, 'CHANGELOG_VERSION_ADD', 'Toekomstige versie toegevoegd', [
+                'version' => $version,
+                'release_date' => $releaseDate,
+            ]);
 
             header('Location: /admin/changelog.php?msg=version_added');
             exit;
@@ -97,6 +167,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_item'])) {
         $authorName = (string)($user['username'] ?? '');
     }
 
+    if (!$canAssignToVersionId($versionId)) {
+        $errors[] = 'Je kunt alleen items koppelen aan toekomstige versies of aan de wensenlijst.';
+    }
+
+    if ($versionId === null && $type !== 'IDEA') {
+        $errors[] = 'Zonder doelversie mag alleen een IDEA / wensenlijst-item worden opgeslagen.';
+    }
+
+    if ($versionId !== null && $type === 'IDEA') {
+        /* toegestaan: wishlist-item gericht op toekomstige versie */
+    }
+
     if (!$errors) {
         $stmt = $pdo->prepare("
             INSERT INTO changelog_items (version_id, type, description, author_name)
@@ -104,13 +186,87 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_item'])) {
         ");
         $stmt->execute([$versionId, $type, $description, $authorName]);
 
-        auditLog(
-            $pdo,
-            'CHANGELOG_ITEM_ADD',
-            'Type=' . $type . '; versie_id=' . ($versionId === null ? 'NULL' : (string)$versionId) . '; omschrijving=' . mb_substr($description, 0, 180)
-        );
+        auditLog($pdo, 'CHANGELOG_ITEM_ADD', 'Nieuw changelog-item toegevoegd', [
+            'type' => $type,
+            'version_id' => $versionId,
+            'description' => mb_substr($description, 0, 180),
+        ]);
 
         header('Location: /admin/changelog.php?msg=item_added');
+        exit;
+    }
+}
+
+/* bestaand item aanpassen */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_item'])) {
+    requireCsrf($_POST['csrf'] ?? '');
+
+    $itemId       = (int)($_POST['item_id'] ?? 0);
+    $versionIdRaw = trim((string)($_POST['version_id'] ?? ''));
+    $type         = strtoupper(trim((string)($_POST['type'] ?? '')));
+    $description  = trim((string)($_POST['description'] ?? ''));
+    $authorName   = trim((string)($_POST['author_name'] ?? ''));
+
+    $versionId = ($versionIdRaw === '') ? null : (int)$versionIdRaw;
+
+    $st = $pdo->prepare("
+        SELECT i.id, i.version_id, i.type, i.description, i.author_name, v.version
+        FROM changelog_items i
+        LEFT JOIN changelog_versions v ON v.id = i.version_id
+        WHERE i.id = ?
+        LIMIT 1
+    ");
+    $st->execute([$itemId]);
+    $existingItem = $st->fetch(PDO::FETCH_ASSOC);
+
+    if (!$existingItem) {
+        $errors[] = 'Het item bestaat niet meer.';
+    } else {
+        $existingVersion = $existingItem['version'] ?? null;
+        $existingLocked = ($existingVersion !== null && isLockedVersionValue((string)$existingVersion, $appVersion));
+
+        if ($existingLocked) {
+            $errors[] = 'Items van de huidige of eerdere versies zijn vergrendeld en kunnen niet meer worden aangepast.';
+        }
+    }
+
+    if (!in_array($type, $allowedTypes, true)) {
+        $errors[] = 'Ongeldig changelog-type.';
+    }
+
+    if ($description === '') {
+        $errors[] = 'Vul een omschrijving in.';
+    }
+
+    if ($authorName === '') {
+        $authorName = (string)($user['username'] ?? '');
+    }
+
+    if (!$canAssignToVersionId($versionId)) {
+        $errors[] = 'Je kunt alleen opslaan naar toekomstige versies of naar de wensenlijst.';
+    }
+
+    if ($versionId === null && $type !== 'IDEA') {
+        $errors[] = 'Zonder doelversie mag alleen een IDEA / wensenlijst-item worden opgeslagen.';
+    }
+
+    if (!$errors) {
+        $upd = $pdo->prepare("
+            UPDATE changelog_items
+            SET version_id = ?, type = ?, description = ?, author_name = ?
+            WHERE id = ?
+            LIMIT 1
+        ");
+        $upd->execute([$versionId, $type, $description, $authorName, $itemId]);
+
+        auditLog($pdo, 'CHANGELOG_ITEM_UPDATE', 'Changelog-item aangepast', [
+            'item_id' => $itemId,
+            'type' => $type,
+            'version_id' => $versionId,
+            'description' => mb_substr($description, 0, 180),
+        ]);
+
+        header('Location: /admin/changelog.php?msg=item_updated');
         exit;
     }
 }
@@ -118,17 +274,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_item'])) {
 /* melding */
 $msg = (string)($_GET['msg'] ?? '');
 if ($msg === 'version_added') {
-    $success = 'Nieuwe versie toegevoegd.';
+    $success = 'Nieuwe toekomstige versie toegevoegd.';
 } elseif ($msg === 'item_added') {
     $success = 'Nieuw changelog-item opgeslagen.';
+} elseif ($msg === 'item_updated') {
+    $success = 'Changelog-item aangepast.';
 }
-
-/* versies ophalen */
-$versions = $pdo->query("
-    SELECT id, version, release_date, created_at
-    FROM changelog_versions
-    ORDER BY id DESC
-")->fetchAll(PDO::FETCH_ASSOC);
 
 /* items ophalen */
 $items = $pdo->query("
@@ -143,31 +294,27 @@ $items = $pdo->query("
         v.release_date
     FROM changelog_items i
     LEFT JOIN changelog_versions v ON v.id = i.version_id
-    ORDER BY
-        COALESCE(i.version_id, 0) DESC,
-        CASE i.type
-            WHEN 'NEW' THEN 1
-            WHEN 'IMPROVE' THEN 2
-            WHEN 'FIX' THEN 3
-            WHEN 'SECURITY' THEN 4
-            WHEN 'IDEA' THEN 5
-            ELSE 9
-        END,
-        i.created_at DESC,
-        i.id DESC
+    ORDER BY i.created_at DESC, i.id DESC
 ")->fetchAll(PDO::FETCH_ASSOC);
 
-/* nieuwste versie */
-$currentVersion = $versions[0] ?? null;
-
-/* items per versie groeperen */
 $itemsByVersion = [];
 $roadmapItems = [];
+$editableItems = [];
 
 foreach ($items as $item) {
     $vid = $item['version_id'] !== null ? (int)$item['version_id'] : null;
+    $type = (string)$item['type'];
+    $itemVersion = $item['version'] ?? null;
 
-    if (($item['type'] ?? '') === 'IDEA' || $vid === null) {
+    $isEditable = ($itemVersion === null)
+        ? true
+        : version_compare((string)$itemVersion, $appVersion, '>');
+
+    if ($isEditable) {
+        $editableItems[] = $item;
+    }
+
+    if ($type === 'IDEA' || $vid === null) {
         $roadmapItems[] = $item;
         continue;
     }
@@ -181,8 +328,8 @@ foreach ($items as $item) {
         ];
     }
 
-    if (isset($itemsByVersion[$vid][$item['type']])) {
-        $itemsByVersion[$vid][$item['type']][] = $item;
+    if (isset($itemsByVersion[$vid][$type])) {
+        $itemsByVersion[$vid][$type][] = $item;
     }
 }
 
@@ -193,17 +340,21 @@ $currentGroups = [
     'SECURITY' => [],
 ];
 
-if ($currentVersion) {
-    $currentGroups = $itemsByVersion[(int)$currentVersion['id']] ?? $currentGroups;
+if ($currentVersionRow) {
+    $currentGroups = $itemsByVersion[(int)$currentVersionRow['id']] ?? $currentGroups;
 }
+
+$releasedVersions = array_values(array_filter(
+    $versions,
+    fn(array $v): bool => version_compare((string)$v['version'], $appVersion, '<=')
+));
 ?>
 <!DOCTYPE html>
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Porbeheer - Changelog</title>
-
+  <title>Porbeheer - Changelog beheer</title>
   <style>
     :root{
       --text: #fff;
@@ -216,6 +367,8 @@ if ($currentVersion) {
       --okb: rgba(120, 255, 170, .32);
       --err: rgba(210, 80, 80, .22);
       --errb: rgba(255, 140, 140, .30);
+      --warn: rgba(225, 180, 70, .18);
+      --warnb: rgba(255, 210, 120, .34);
     }
 
     *{box-sizing:border-box}
@@ -234,12 +387,11 @@ if ($currentVersion) {
         radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
         linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
       padding: 26px;
-      box-sizing: border-box;
       display:flex;
       justify-content:center;
     }
 
-    .wrap{ width: min(1280px, 96vw); }
+    .wrap{ width: min(1380px, 96vw); }
 
     .topbar{
       display:flex;
@@ -267,7 +419,6 @@ if ($currentVersion) {
     .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
 
     .panel{
-      margin-top: 10px;
       border-radius: 20px;
       border: 1px solid rgba(255,255,255,.18);
       background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
@@ -277,7 +428,7 @@ if ($currentVersion) {
       padding: 18px;
     }
 
-    a{color:#fff;text-decoration:none;transition:color .15s ease}
+    a{color:#fff;text-decoration:none}
     a:hover{color:#ffd9b3}
     a:visited{color:#ffe0c2}
 
@@ -287,9 +438,9 @@ if ($currentVersion) {
       align-items:flex-end;
       gap:12px;
       flex-wrap:wrap;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
-    .pagehead h2{margin:0;font-size:20px;letter-spacing:.2px}
+    .pagehead h2{margin:0;font-size:20px}
     .pagehead .hint{color:var(--muted);font-size:13px;margin-top:6px}
 
     .kbar{
@@ -306,21 +457,10 @@ if ($currentVersion) {
       border: 1px solid rgba(255,255,255,.22);
       background: linear-gradient(180deg, var(--glass), var(--glass2));
       box-shadow: 0 10px 22px rgba(0,0,0,.28);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
       font-weight: 800;
-      letter-spacing: .2px;
-      transition: transform .12s ease, border-color .12s ease, background .12s ease;
-    }
-    .kbtn:hover{
-      transform: translateY(-2px);
-      border-color: rgba(255,255,255,.38);
-      background: linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,.08));
     }
 
-    .success,
-    .errorbox,
-    .notice{
+    .success,.errorbox,.notice,.warning{
       margin-bottom: 14px;
       padding: 12px 14px;
       border-radius: 16px;
@@ -328,28 +468,15 @@ if ($currentVersion) {
       font-size: 13px;
       line-height: 1.45;
     }
-    .success{
-      background: var(--ok);
-      border-color: var(--okb);
-      color:#f4fff7;
-    }
-    .errorbox{
-      background: var(--err);
-      border-color: var(--errb);
-      color:#fff3f3;
-    }
-    .notice{
-      background: rgba(255,255,255,.06);
-      color: var(--muted);
-    }
-    .errorbox ul{
-      margin:0;
-      padding-left:18px;
-    }
+    .success{background: var(--ok); border-color: var(--okb); color:#f4fff7;}
+    .errorbox{background: var(--err); border-color: var(--errb); color:#fff3f3;}
+    .warning{background: var(--warn); border-color: var(--warnb); color:#fff8ec;}
+    .notice{background: rgba(255,255,255,.06); color: var(--muted);}
+    .errorbox ul{margin:0;padding-left:18px}
 
     .hero{
       display:grid;
-      grid-template-columns: 1.25fr .95fr;
+      grid-template-columns: 1.1fr .9fr;
       gap:16px;
       margin-bottom:16px;
     }
@@ -361,49 +488,24 @@ if ($currentVersion) {
       align-items:start;
     }
 
-    @media (max-width: 1024px){
-      .hero,
-      .grid{
-        grid-template-columns:1fr;
-      }
+    @media (max-width: 1100px){
+      .hero,.grid{grid-template-columns:1fr}
       .userbox{min-width: unset; width: 100%;}
     }
 
     .card{
-      position: relative;
       border-radius: 16px;
       border: 1px solid rgba(255,255,255,.22);
       background: linear-gradient(180deg, var(--glass), var(--glass2));
       box-shadow: 0 10px 22px rgba(0,0,0,.30);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      overflow:hidden;
-      padding: 14px 14px 12px 14px;
-      min-height: 110px;
+      padding: 14px;
     }
-    .card::before{
-      content:"";
-      position:absolute;
-      inset:-40%;
-      background: radial-gradient(circle at 20% 30%, rgba(255,255,255,.20), transparent 45%);
-      transform: rotate(12deg);
-      pointer-events:none;
-    }
-    .card > *{position:relative}
 
-    .sectiontitle{
-      margin:0 0 10px 0;
-      font-size: 17px;
-      letter-spacing:.2px;
-    }
+    .sectiontitle{margin:0 0 10px 0;font-size:17px}
+    .subtle{color:var(--muted);font-size:13px}
 
     .formrow{margin-bottom:12px}
-    .label{
-      display:block;
-      font-size:13px;
-      color:var(--muted);
-      margin-bottom:6px;
-    }
+    .label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
 
     input[type="text"],
     input[type="date"],
@@ -419,15 +521,8 @@ if ($currentVersion) {
       font: inherit;
     }
 
-    textarea{
-      min-height:110px;
-      resize:vertical;
-    }
-
-    select option{
-      color:#111;
-      background:#fff;
-    }
+    textarea{min-height:110px;resize:vertical}
+    select option{color:#111;background:#fff}
 
     .btn{
       display:inline-block;
@@ -436,18 +531,9 @@ if ($currentVersion) {
       border: 1px solid rgba(255,255,255,.22);
       background: linear-gradient(180deg, var(--glass), var(--glass2));
       box-shadow: 0 10px 22px rgba(0,0,0,.28);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
       font-weight: 800;
-      letter-spacing: .2px;
-      transition: transform .12s ease, border-color .12s ease, background .12s ease;
       color:#fff;
       cursor:pointer;
-    }
-    .btn:hover{
-      transform: translateY(-2px);
-      border-color: rgba(255,255,255,.38);
-      background: linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,.08));
     }
 
     .versionhero{
@@ -457,22 +543,9 @@ if ($currentVersion) {
       background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.07));
       box-shadow: 0 10px 24px rgba(0,0,0,.28);
     }
-    .vlabel{
-      color:var(--muted);
-      font-size:13px;
-      margin-bottom:6px;
-    }
-    .vnumber{
-      font-size:30px;
-      font-weight:800;
-      margin:0 0 8px 0;
-      letter-spacing:.3px;
-    }
-    .vmeta{
-      color:var(--muted);
-      font-size:13px;
-      margin-bottom:10px;
-    }
+    .vlabel{color:var(--muted);font-size:13px;margin-bottom:6px}
+    .vnumber{font-size:30px;font-weight:800;margin:0 0 8px 0}
+    .vmeta{color:var(--muted);font-size:13px;margin-bottom:10px}
 
     .quickstats{
       display:grid;
@@ -489,36 +562,8 @@ if ($currentVersion) {
       border:1px solid rgba(255,255,255,.14);
       background: rgba(255,255,255,.05);
     }
-    .stat .n{
-      font-size:24px;
-      font-weight:800;
-      line-height:1;
-      margin-bottom:5px;
-    }
-    .stat .t{
-      font-size:12px;
-      color:var(--muted);
-      letter-spacing:.2px;
-    }
-
-    .typeblock{
-      margin-top:14px;
-      padding-top:14px;
-      border-top:1px solid rgba(255,255,255,.10);
-    }
-    .typeblock:first-child{
-      margin-top:0;
-      padding-top:0;
-      border-top:none;
-    }
-
-    .typetitle{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      margin:0 0 10px 0;
-      font-size:15px;
-    }
+    .stat .n{font-size:24px;font-weight:800;line-height:1;margin-bottom:5px}
+    .stat .t{font-size:12px;color:var(--muted)}
 
     .itemlist{
       list-style:none;
@@ -548,55 +593,51 @@ if ($currentVersion) {
       border-radius:999px;
       font-size:12px;
       font-weight:800;
-      letter-spacing:.4px;
       border:1px solid rgba(255,255,255,.18);
       background: rgba(255,255,255,.10);
       flex:0 0 auto;
     }
-
     .badge.new{background:rgba(70, 180, 110, .26)}
     .badge.improve{background:rgba(70, 120, 220, .26)}
     .badge.fix{background:rgba(205, 145, 55, .26)}
     .badge.security{background:rgba(190, 70, 70, .26)}
     .badge.idea{background:rgba(140, 95, 205, .26)}
+    .badge.locked{background:rgba(160,160,160,.26)}
+    .badge.future{background:rgba(90,160,230,.26)}
 
     .itembody{flex:1}
-    .itemtext{
-      line-height:1.45;
-      color:#fff;
-    }
-    .itemmeta{
-      margin-top:6px;
-      font-size:12px;
-      color:var(--muted);
-    }
-
-    .empty{
-      color:var(--muted);
-      font-size:13px;
-      padding:6px 0 2px 0;
-    }
+    .itemtext{line-height:1.45}
+    .itemmeta{margin-top:6px;font-size:12px;color:var(--muted)}
+    .empty{color:var(--muted);font-size:13px;padding:6px 0 2px 0}
 
     .versionblock{
       margin-top:16px;
       padding-top:14px;
       border-top:1px solid rgba(255,255,255,.10);
     }
-    .versionblock:first-child{
-      margin-top:0;
-      padding-top:0;
-      border-top:none;
+    .versionblock:first-child{margin-top:0;padding-top:0;border-top:none}
+
+    .typetitle{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      margin:0 0 10px 0;
+      font-size:15px;
     }
 
-    .versiontitle{
-      margin:0 0 8px 0;
-      font-size:19px;
+    .typeblock{
+      margin-top:14px;
+      padding-top:14px;
+      border-top:1px solid rgba(255,255,255,.10);
     }
+    .typeblock:first-child{margin-top:0;padding-top:0;border-top:none}
 
-    .versionsub{
-      color:var(--muted);
-      font-size:13px;
-      margin-bottom:10px;
+    .editbox{
+      margin-top:10px;
+      padding:12px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.04);
     }
 
     code{
@@ -615,13 +656,15 @@ if ($currentVersion) {
       <div class="topbar">
         <div class="brand">
           <h1>Porbeheer</h1>
-          <div class="sub">POP Oefenruimte Zevenaar • beheer & planning</div>
+          <div class="sub">POP Oefenruimte Zevenaar • changelog beheer</div>
         </div>
 
         <div class="userbox">
           <div class="line1">Hallo <?= h($user['username'] ?? '') ?> · Jouw rol is <?= h($role) ?></div>
           <div class="line2">
             <a href="/admin/dashboard.php">Dashboard</a>
+            &nbsp;•&nbsp;
+            <a href="/changelog.php">Publieke changelog</a>
             &nbsp;•&nbsp;
             <a href="/logout.php">Uitloggen</a>
           </div>
@@ -632,8 +675,12 @@ if ($currentVersion) {
         <div class="pagehead">
           <div>
             <h2>Changelog beheer</h2>
-            <div class="hint">Versies, verbeteringen, fixes, security-aanpassingen en roadmap in één overzicht.</div>
+            <div class="hint">Alleen toekomstige versies en wensenlijst-items zijn wijzigbaar. Huidige en eerdere versies zijn vergrendeld.</div>
           </div>
+        </div>
+
+        <div class="kbar">
+          <a class="kbtn" href="/changelog.php">Publiek overzicht</a>
         </div>
 
         <?php if ($success): ?>
@@ -650,71 +697,45 @@ if ($currentVersion) {
           </div>
         <?php endif; ?>
 
+        <div class="warning">
+          Huidige versie uit configuratie: <code><?= h($appVersion) ?></code>.
+          Alles met versie <code>&lt;= <?= h($appVersion) ?></code> is geblokkeerd voor wijziging.
+        </div>
+
         <div class="hero">
           <div class="versionhero">
-            <div class="vlabel">Wijzigingen in deze versie</div>
+            <div class="vlabel">Actieve applicatieversie</div>
+            <div class="vnumber">Versie <?= h($appVersion) ?></div>
+            <div class="vmeta">
+              Deze versie komt uit <code>config.php</code> en bepaalt welke changelog-versies vergrendeld zijn.
+            </div>
 
-            <?php if ($currentVersion): ?>
-              <div class="vnumber">Versie <?= h($currentVersion['version']) ?></div>
-              <div class="vmeta">
-                Releasedatum:
-                <?= !empty($currentVersion['release_date']) ? h((string)$currentVersion['release_date']) : 'nog niet ingevuld' ?>
+            <div class="quickstats">
+              <div class="stat">
+                <div class="n"><?= count($releasedVersions) ?></div>
+                <div class="t">Vergrendelde versies</div>
               </div>
-
-              <?php
-                $countNew      = count($currentGroups['NEW']);
-                $countImprove  = count($currentGroups['IMPROVE']);
-                $countFix      = count($currentGroups['FIX']);
-                $countSecurity = count($currentGroups['SECURITY']);
-              ?>
-
-              <div class="quickstats">
-                <div class="stat">
-                  <div class="n"><?= $countNew ?></div>
-                  <div class="t">Nieuw</div>
-                </div>
-                <div class="stat">
-                  <div class="n"><?= $countImprove ?></div>
-                  <div class="t">Verbeteringen</div>
-                </div>
-                <div class="stat">
-                  <div class="n"><?= $countFix ?></div>
-                  <div class="t">Fixes</div>
-                </div>
-                <div class="stat">
-                  <div class="n"><?= $countSecurity ?></div>
-                  <div class="t">Security</div>
-                </div>
+              <div class="stat">
+                <div class="n"><?= count($futureVersions) ?></div>
+                <div class="t">Toekomstige versies</div>
               </div>
-            <?php else: ?>
-              <div class="vnumber">Nog geen versies</div>
-              <div class="empty">Voeg eerst een versie toe om de changelog op te bouwen.</div>
-            <?php endif; ?>
+              <div class="stat">
+                <div class="n"><?= count($roadmapItems) ?></div>
+                <div class="t">Wensenlijst-items</div>
+              </div>
+              <div class="stat">
+                <div class="n"><?= count($editableItems) ?></div>
+                <div class="t">Wijzigbare items</div>
+              </div>
+            </div>
           </div>
 
           <div class="card">
-            <h3 class="sectiontitle">Legenda</h3>
+            <h3 class="sectiontitle">Regels</h3>
             <ul class="itemlist">
-              <li class="item">
-                <span class="badge new">NEW</span>
-                <div class="itembody"><div class="itemtext">Nieuwe functionaliteit</div></div>
-              </li>
-              <li class="item">
-                <span class="badge improve">IMPROVE</span>
-                <div class="itembody"><div class="itemtext">Verbetering of aanpassing van bestaande werking</div></div>
-              </li>
-              <li class="item">
-                <span class="badge fix">FIX</span>
-                <div class="itembody"><div class="itemtext">Foutoplossing of bugfix</div></div>
-              </li>
-              <li class="item">
-                <span class="badge security">SECURITY</span>
-                <div class="itembody"><div class="itemtext">Beveiligingsaanpassing of hardening</div></div>
-              </li>
-              <li class="item">
-                <span class="badge idea">IDEA</span>
-                <div class="itembody"><div class="itemtext">Wens voor volgende versies / roadmap</div></div>
-              </li>
+              <li class="item"><span class="badge locked">LOCKED</span><div class="itembody"><div class="itemtext">Huidige en eerdere versies mogen niet meer worden aangepast</div></div></li>
+              <li class="item"><span class="badge future">FUTURE</span><div class="itembody"><div class="itemtext">Nieuwe items mogen aan toekomstige versies worden gekoppeld</div></div></li>
+              <li class="item"><span class="badge idea">IDEA</span><div class="itembody"><div class="itemtext">Wensenlijst-item zonder versie of gericht op een latere versie</div></div></li>
             </ul>
           </div>
         </div>
@@ -722,18 +743,19 @@ if ($currentVersion) {
         <div class="grid">
           <div>
             <div class="card" style="margin-bottom:16px;">
-              <h3 class="sectiontitle">Nieuwe versie toevoegen</h3>
+              <h3 class="sectiontitle">Nieuwe toekomstige versie</h3>
+              <div class="subtle" style="margin-bottom:10px;">Alleen versies groter dan <?= h($appVersion) ?> zijn toegestaan.</div>
 
               <form method="post" action="/admin/changelog.php">
                 <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
 
                 <div class="formrow">
                   <label class="label" for="version">Versienummer</label>
-                  <input type="text" id="version" name="version" placeholder="bijv. 1.3.0">
+                  <input type="text" id="version" name="version" placeholder="bijv. 1.2.2 of 1.3.0">
                 </div>
 
                 <div class="formrow">
-                  <label class="label" for="release_date">Releasedatum</label>
+                  <label class="label" for="release_date">Geplande releasedatum</label>
                   <input type="date" id="release_date" name="release_date">
                 </div>
 
@@ -748,13 +770,11 @@ if ($currentVersion) {
                 <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
 
                 <div class="formrow">
-                  <label class="label" for="version_id">Versie</label>
+                  <label class="label" for="version_id">Doelversie</label>
                   <select id="version_id" name="version_id">
-                    <option value="">Roadmap / wenslijst</option>
-                    <?php foreach ($versions as $v): ?>
-                      <option value="<?= (int)$v['id'] ?>">
-                        <?= h((string)$v['version']) ?>
-                      </option>
+                    <option value="">Wensenlijst / roadmap</option>
+                    <?php foreach ($futureVersions as $v): ?>
+                      <option value="<?= (int)$v['id'] ?>"><?= h((string)$v['version']) ?></option>
                     <?php endforeach; ?>
                   </select>
                 </div>
@@ -772,12 +792,12 @@ if ($currentVersion) {
 
                 <div class="formrow">
                   <label class="label" for="description">Omschrijving</label>
-                  <textarea id="description" name="description" placeholder="Omschrijf de wijziging, fix, security-aanpassing of wens..."></textarea>
+                  <textarea id="description" name="description" placeholder="Omschrijf de wijziging, fix of wens..."></textarea>
                 </div>
 
                 <div class="formrow">
                   <label class="label" for="author_name">Auteur</label>
-                  <input type="text" id="author_name" name="author_name" value="<?= h((string)($user['username'] ?? '')) ?>" placeholder="Naam van de invoerder">
+                  <input type="text" id="author_name" name="author_name" value="<?= h((string)($user['username'] ?? '')) ?>">
                 </div>
 
                 <button class="btn" type="submit" name="new_item" value="1">Item opslaan</button>
@@ -785,53 +805,17 @@ if ($currentVersion) {
             </div>
 
             <div class="notice">
-              Laat <code>Versie</code> leeg en kies <code>IDEA</code> om iets op de roadmap te zetten.
-              Gebruik <code>SECURITY</code> voor bijvoorbeeld CSRF, rechtencontrole, logging, validatie of hardening.
+              Laat <code>Doelversie</code> leeg voor de wensenlijst.  
+              Zonder doelversie mag alleen <code>IDEA</code> gebruikt worden.
             </div>
           </div>
 
           <div>
             <div class="card" style="margin-bottom:16px;">
-              <h3 class="sectiontitle">Huidige versie</h3>
+              <h3 class="sectiontitle">Vergrendelde versies</h3>
 
-              <?php if ($currentVersion): ?>
-                <?php foreach (['NEW' => 'Nieuw', 'IMPROVE' => 'Verbeteringen', 'FIX' => 'Fixes', 'SECURITY' => 'Security'] as $typeKey => $typeLabel): ?>
-                  <div class="typeblock">
-                    <h4 class="typetitle">
-                      <span class="<?= h(changelogBadgeClass($typeKey)) ?>"><?= h($typeKey) ?></span>
-                      <span><?= h($typeLabel) ?></span>
-                    </h4>
-
-                    <?php if (!empty($currentGroups[$typeKey])): ?>
-                      <ul class="itemlist">
-                        <?php foreach ($currentGroups[$typeKey] as $item): ?>
-                          <li class="item">
-                            <span class="<?= h(changelogBadgeClass((string)$item['type'])) ?>"><?= h((string)$item['type']) ?></span>
-                            <div class="itembody">
-                              <div class="itemtext"><?= nl2br(h((string)$item['description'])) ?></div>
-                              <div class="itemmeta">
-                                <?= !empty($item['author_name']) ? 'Door ' . h((string)$item['author_name']) . ' • ' : '' ?>
-                                <?= h((string)$item['created_at']) ?>
-                              </div>
-                            </div>
-                          </li>
-                        <?php endforeach; ?>
-                      </ul>
-                    <?php else: ?>
-                      <div class="empty">Geen items in deze categorie.</div>
-                    <?php endif; ?>
-                  </div>
-                <?php endforeach; ?>
-              <?php else: ?>
-                <div class="empty">Er is nog geen huidige versie beschikbaar.</div>
-              <?php endif; ?>
-            </div>
-
-            <div class="card" style="margin-bottom:16px;">
-              <h3 class="sectiontitle">Alle versies</h3>
-
-              <?php if ($versions): ?>
-                <?php foreach ($versions as $version): ?>
+              <?php if ($releasedVersions): ?>
+                <?php foreach ($releasedVersions as $version): ?>
                   <?php
                     $vid = (int)$version['id'];
                     $groups = $itemsByVersion[$vid] ?? [
@@ -842,17 +826,17 @@ if ($currentVersion) {
                     ];
                   ?>
                   <div class="versionblock">
-                    <h4 class="versiontitle">Versie <?= h((string)$version['version']) ?></h4>
-                    <div class="versionsub">
+                    <h4 style="margin:0 0 8px 0;">Versie <?= h((string)$version['version']) ?> <span class="badge locked">LOCKED</span></h4>
+                    <div class="subtle">
                       Releasedatum:
                       <?= !empty($version['release_date']) ? h((string)$version['release_date']) : 'nog niet ingevuld' ?>
                     </div>
 
-                    <?php foreach (['NEW' => 'Nieuw', 'IMPROVE' => 'Verbeteringen', 'FIX' => 'Fixes', 'SECURITY' => 'Security'] as $typeKey => $typeLabel): ?>
+                    <?php foreach (['NEW','IMPROVE','FIX','SECURITY'] as $typeKey): ?>
                       <div class="typeblock">
                         <h5 class="typetitle">
                           <span class="<?= h(changelogBadgeClass($typeKey)) ?>"><?= h($typeKey) ?></span>
-                          <span><?= h($typeLabel) ?></span>
+                          <span><?= h(changelogTypeLabel($typeKey)) ?></span>
                         </h5>
 
                         <?php if (!empty($groups[$typeKey])): ?>
@@ -878,7 +862,76 @@ if ($currentVersion) {
                   </div>
                 <?php endforeach; ?>
               <?php else: ?>
-                <div class="empty">Er zijn nog geen versies aangemaakt.</div>
+                <div class="empty">Er zijn nog geen vergrendelde versies.</div>
+              <?php endif; ?>
+            </div>
+
+            <div class="card" style="margin-bottom:16px;">
+              <h3 class="sectiontitle">Wijzigbare toekomstige items</h3>
+
+              <?php if ($editableItems): ?>
+                <?php foreach ($editableItems as $item): ?>
+                  <div class="item" style="margin-bottom:12px;">
+                    <span class="<?= h(changelogBadgeClass((string)$item['type'])) ?>"><?= h((string)$item['type']) ?></span>
+
+                    <div class="itembody">
+                      <div class="itemtext"><?= nl2br(h((string)$item['description'])) ?></div>
+                      <div class="itemmeta">
+                        <?= !empty($item['author_name']) ? 'Door ' . h((string)$item['author_name']) . ' • ' : '' ?>
+                        <?= h((string)$item['created_at']) ?>
+                        <?php if (!empty($item['version'])): ?>
+                          &nbsp;•&nbsp; Doelversie: <?= h((string)$item['version']) ?>
+                        <?php else: ?>
+                          &nbsp;•&nbsp; Wensenlijst
+                        <?php endif; ?>
+                      </div>
+
+                      <div class="editbox">
+                        <form method="post" action="/admin/changelog.php">
+                          <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
+                          <input type="hidden" name="item_id" value="<?= (int)$item['id'] ?>">
+
+                          <div class="formrow">
+                            <label class="label">Doelversie</label>
+                            <select name="version_id">
+                              <option value="" <?= $item['version_id'] === null ? 'selected' : '' ?>>Wensenlijst / roadmap</option>
+                              <?php foreach ($futureVersions as $v): ?>
+                                <option value="<?= (int)$v['id'] ?>" <?= ((int)$item['version_id'] === (int)$v['id']) ? 'selected' : '' ?>>
+                                  <?= h((string)$v['version']) ?>
+                                </option>
+                              <?php endforeach; ?>
+                            </select>
+                          </div>
+
+                          <div class="formrow">
+                            <label class="label">Type</label>
+                            <select name="type">
+                              <?php foreach ($allowedTypes as $type): ?>
+                                <option value="<?= h($type) ?>" <?= ((string)$item['type'] === $type) ? 'selected' : '' ?>>
+                                  <?= h($type) ?>
+                                </option>
+                              <?php endforeach; ?>
+                            </select>
+                          </div>
+
+                          <div class="formrow">
+                            <label class="label">Omschrijving</label>
+                            <textarea name="description"><?= h((string)$item['description']) ?></textarea>
+                          </div>
+
+                          <div class="formrow">
+                            <label class="label">Auteur</label>
+                            <input type="text" name="author_name" value="<?= h((string)($item['author_name'] ?? '')) ?>">
+                          </div>
+
+                          <button class="btn" type="submit" name="update_item" value="1">Item aanpassen</button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
+              <?php else: ?>
+                <div class="empty">Er zijn nog geen wijzigbare toekomstige of roadmap-items.</div>
               <?php endif; ?>
             </div>
 
@@ -907,9 +960,9 @@ if ($currentVersion) {
                 <div class="empty">Er staan nog geen roadmap-items in de wensenlijst.</div>
               <?php endif; ?>
             </div>
+
           </div>
         </div>
-
       </div>
     </div>
   </div>

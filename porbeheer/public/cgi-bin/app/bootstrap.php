@@ -5,7 +5,19 @@ declare(strict_types=1);
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
 
-define('PROJECT_ROOT', dirname(__DIR__));
+// /var/www/porbeheer/public/cgi-bin/app -> projectroot = /var/www/porbeheer/public
+define('PROJECT_ROOT', dirname(__DIR__, 2));
+
+// ====== GENERIC HTML ESCAPE ======
+if (!function_exists('h')) {
+    function h(?string $v): string
+    {
+        return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+    }
+}
+
+// ====== SIMPLE AUTOLOAD FOR LOCAL VENDOR LIBS ======
+require_once __DIR__ . '/autoload.php';
 
 // ====== CONFIG ======
 $configFile = __DIR__ . '/config.php';
@@ -39,6 +51,7 @@ if (!function_exists('requestScheme')) {
     {
         $https = (string)($_SERVER['HTTPS'] ?? '');
         $forwarded = (string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '');
+
         if ($https !== '' && strtolower($https) !== 'off') {
             return 'https';
         }
@@ -62,6 +75,7 @@ if (!function_exists('detectEnvironment')) {
         if (in_array($host, $demoHosts, true) || str_contains($host, 'demo')) {
             return 'demo';
         }
+
         if (
             in_array($host, $developmentHosts, true)
             || $host === 'localhost'
@@ -71,9 +85,11 @@ if (!function_exists('detectEnvironment')) {
         ) {
             return 'development';
         }
+
         if (in_array($host, $productionHosts, true)) {
             return 'production';
         }
+
         return 'production';
     }
 }
@@ -261,10 +277,3 @@ require_once __DIR__ . '/auth.php';
 
 // Start session veilig
 startSecureSession();
-
-// ====== GENERIC HTML ESCAPE ======
-if (!function_exists('h')) {
-    function h(?string $v): string {
-        return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-    }
-}

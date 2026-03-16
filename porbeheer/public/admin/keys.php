@@ -68,8 +68,8 @@ try {
       WHERE l.deleted_at IS NULL
       GROUP BY l.id
       ORDER BY
-        (b.name IS NULL) ASC,
-        b.name ASC,
+        CASE WHEN l.locker_no REGEXP '^[0-9]+$' THEN 0 ELSE 1 END ASC,
+        CASE WHEN l.locker_no REGEXP '^[0-9]+$' THEN CAST(l.locker_no AS UNSIGNED) ELSE 999999 END ASC,
         l.locker_no ASC
     ";
     $lockers = $pdo->query($sqlLockers)->fetchAll(PDO::FETCH_ASSOC);
@@ -118,8 +118,11 @@ try {
       WHERE k.deleted_at IS NULL
       ORDER BY
         (k.key_type <> 'LOCKER') ASC,
-        b.name, l.locker_no,
-        k.key_slot, k.key_code
+        CASE WHEN l.locker_no REGEXP '^[0-9]+$' THEN 0 ELSE 1 END ASC,
+        CASE WHEN l.locker_no REGEXP '^[0-9]+$' THEN CAST(l.locker_no AS UNSIGNED) ELSE 999999 END ASC,
+        l.locker_no ASC,
+        CASE WHEN k.key_slot IS NULL THEN 999 ELSE k.key_slot END ASC,
+        k.key_code ASC
     ";
     $keys = $pdo->query($sqlKeys)->fetchAll(PDO::FETCH_ASSOC);
 
@@ -148,8 +151,13 @@ foreach ($keys as $kr) {
 <title>Porbeheer - Kasten & Sleutels</title>
 <style>
 :root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);
-    background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  color:var(--text);
+  background:url('<?= h($bg) ?>') no-repeat center center fixed;
+  background-size:cover;
+}
 .backdrop{min-height:100vh;background:
   radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
   linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
@@ -190,10 +198,9 @@ code{background:rgba(0,0,0,.25);padding:2px 6px;border-radius:8px;border:1px sol
 .kpi{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
 .kpi .pill{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);border-radius:999px;padding:6px 10px;font-size:13px;color:var(--muted)}
 hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
-  a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
+a{color:#fff;text-decoration:none;transition:color .15s ease}
+a:hover{color:#ffd9b3}
+a:visited{color:#ffe0c2}
 </style>
 </head>
 <body>
@@ -226,7 +233,6 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
 
     <div class="grid">
 
-      <!-- KASTEN -->
       <div class="card" id="kasten">
         <h2>Overzicht POR-kasten</h2>
         <div class="small"><?= (int)$lockerCount ?> kasten · vrije kasten: <?= (int)$freeLockers ?></div>
@@ -260,12 +266,12 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
                 if ($totalKeys < 2) $warn = 'Minder dan 2 sleutels (bijbestellen?)';
               ?>
               <tr>
-                  <td>
-                    <a href="/admin/locker_edit.php?id=<?= (int)$lid ?>">
-                      <strong><?= h($lockerNo) ?></strong>
-                    </a>
-                  </td>
-              <td>
+                <td>
+                  <a href="/admin/locker_edit.php?id=<?= (int)$lid ?>">
+                    <strong><?= h($lockerNo) ?></strong>
+                  </a>
+                </td>
+                <td>
                   <?php if ($bandId > 0): ?>
                     <a href="/admin/band_detail.php?id=<?= $bandId ?>"><?= h($bandTxt) ?></a>
                   <?php else: ?>
@@ -295,7 +301,6 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
         </div>
       </div>
 
-      <!-- SLEUTELS -->
       <div class="card" id="sleutels">
         <h2>Overzicht sleutels</h2>
         <div class="small"><?= (int)$keyCount ?> sleutels</div>
@@ -328,7 +333,6 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
                 $band    = trim((string)($r['band_name'] ?? ''));
                 $locker  = trim((string)($r['locker_no'] ?? ''));
 
-                // Passend op tekst
                 if ($keyType === 'MASTER') {
                   $kastTxt = 'Alle POR-kasten (Master)';
                 } elseif ($keyType === 'EXTERNAL') {
@@ -350,11 +354,6 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
                 $docId       = $r['doc_id'] ? (int)$r['doc_id'] : 0;
 
                 $label = $name !== '' ? $name : ('Sleutel ' . $code);
-
-                $typeLabel = $keyType;
-                if ($keyType === 'LOCKER') $typeLabel = 'Kast';
-                if ($keyType === 'MASTER') $typeLabel = 'Master';
-                if ($keyType === 'EXTERNAL') $typeLabel = 'Extern';
               ?>
               <tr>
                 <td><strong><?= h($code) ?></strong></td>
