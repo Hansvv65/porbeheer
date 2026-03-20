@@ -1,16 +1,15 @@
 <?php
 declare(strict_types=1);
-
-require_once __DIR__ . '/../cgi-bin/app/bootstrap.php';
-require_once __DIR__ . '/../cgi-bin/app/auth.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
 requireRole(['ADMIN','BEHEER']);
 
-require_once __DIR__ . '/../cgi-bin/app/config.php'; // retourneert array
-require_once __DIR__ . '/../cgi-bin/app/lib/PHPMailer/src/Exception.php';
-require_once __DIR__ . '/../cgi-bin/app/lib/PHPMailer/src/PHPMailer.php';
-require_once __DIR__ . '/../cgi-bin/app/lib/PHPMailer/src/SMTP.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/config.php'; // retourneert array
+require_once __DIR__ . '/../../../libs/porbeheer/app/lib/PHPMailer/src/Exception.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/lib/PHPMailer/src/PHPMailer.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/lib/PHPMailer/src/SMTP.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;

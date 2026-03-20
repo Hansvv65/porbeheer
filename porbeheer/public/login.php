@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/cgi-bin/app/bootstrap.php';
+require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
 
 function h(?string $v): string
 {

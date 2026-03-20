@@ -1,7 +1,8 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../cgi-bin/app/bootstrap.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 
 requireLogin();
 
@@ -13,8 +14,8 @@ function h(?string $v): string
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 }
 
-require_once __DIR__ . '/../cgi-bin/vendor/autoload.php';
-require_once __DIR__ . '/../cgi-bin/app/Qr/QrSvgProvider.php';
+require_once __DIR__ . '/../../../libs/porbeheer/vendor/autoload.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/Qr/QrSvgProvider.php';
 
 $user = currentUser();
 $userId = (int)($user['id'] ?? 0);

@@ -6,9 +6,8 @@ declare(strict_types=1);
    Hiermee kan je het volledige proces testen: genereren van een nieuwe sleutel, scannen van de QR-code, en verifiëren van codes uit de authenticator app.
 */
 
-
-require_once __DIR__ . '/../cgi-bin/app/bootstrap.php';
-require_once __DIR__ . '/../cgi-bin/app/auth.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
 requireLogin();

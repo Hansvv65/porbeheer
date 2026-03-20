@@ -24,7 +24,7 @@ $getSecret = static function (string $key, mixed $default = '') use ($secrets): 
 return [
     'app' => [
         'name'            => 'PorBeheer',
-        'version'         => '1.3.0',
+        'version'         => '2.0.0',
         'timezone'        => 'Europe/Amsterdam',
         'banner_enabled'  => true,
         'banner_envs'     => ['demo', 'development'],
@@ -100,6 +100,6 @@ return [
     ],
 
     'security' => [
-        'session_idle_timeout' => 600,
+        'session_idle_timeout' => 1200,
     ],
 ];

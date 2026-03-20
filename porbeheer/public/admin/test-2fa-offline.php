@@ -1,7 +1,11 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../cgi-bin/app/bootstrap.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
+/**
+ * Testpagina voor 2FA zonder database of gebruikersaccounts.
+ * Hiermee kan je een willekeurige secrete genereren en de QR-code bekijken, en vervolgens codes verifiëren met een authenticator app. */
 
 use App\Qr\QrSvgProvider;
 use RobThree\Auth\TwoFactorAuth;
