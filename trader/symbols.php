@@ -2,89 +2,125 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/app/db.php';
-require_once __DIR__ . '/includes/asset_catalog.php';
+require_once __DIR__ . '/app/functions.php';
+require_once __DIR__ . '/includes/layout.php';
 
-$stmt = $pdo->query("
-    SELECT id, symbol, display_name, asset_type, exchange_name, source_provider, notes, created_at
-    FROM tracked_symbols
+if (isPost() && postString('action') === 'delete_symbol') {
+    requireCsrf();
+    $symbol = strtoupper(postString('symbol'));
+    try {
+        $pdo->beginTransaction();
+        executeSql($pdo, 'DELETE FROM tracked_symbols WHERE symbol = ?', [$symbol]);
+        executeSql($pdo, 'DELETE FROM bot_symbols WHERE symbol = ?', [$symbol]);
+        $pdo->commit();
+        redirectBackWithFlash('success', 'Asset verwijderd uit watchlist en bot.', appUrl('/symbols.php'));
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('symbols delete failed: ' . $e->getMessage());
+        redirectBackWithFlash('error', 'Verwijderen is mislukt.', appUrl('/symbols.php'));
+    }
+}
+
+$rows = fetchAllRows($pdo, "
+    SELECT COALESCE(t.symbol, b.symbol) AS symbol,
+           t.display_name,
+           COALESCE(t.asset_type, b.asset_type) AS asset_type,
+           t.exchange_name,
+           t.source_provider,
+           b.is_active,
+           b.priority_order,
+           b.data_symbol,
+           b.order_symbol,
+           snap.price AS last_price,
+           snap.trend_state,
+           snap.trend_score,
+           sig.signal_reason,
+           pos.quantity
+    FROM tracked_symbols t
+    LEFT JOIN bot_symbols b ON b.symbol = t.symbol
+    LEFT JOIN asset_snapshots snap ON snap.id = (
+        SELECT s.id FROM asset_snapshots s WHERE s.symbol = COALESCE(t.symbol, b.symbol) ORDER BY s.snapshot_time DESC, s.id DESC LIMIT 1
+    )
+    LEFT JOIN asset_signal_log sig ON sig.id = (
+        SELECT l.id FROM asset_signal_log l WHERE l.symbol = COALESCE(t.symbol, b.symbol) ORDER BY l.signal_time DESC, l.id DESC LIMIT 1
+    )
+    LEFT JOIN positions pos ON pos.id = (
+        SELECT p.id FROM positions p WHERE p.symbol = COALESCE(t.symbol, b.symbol) AND p.status = 'OPEN' ORDER BY p.id DESC LIMIT 1
+    )
+    UNION
+    SELECT COALESCE(t.symbol, b.symbol) AS symbol,
+           t.display_name,
+           COALESCE(t.asset_type, b.asset_type) AS asset_type,
+           t.exchange_name,
+           t.source_provider,
+           b.is_active,
+           b.priority_order,
+           b.data_symbol,
+           b.order_symbol,
+           snap.price AS last_price,
+           snap.trend_state,
+           snap.trend_score,
+           sig.signal_reason,
+           pos.quantity
+    FROM bot_symbols b
+    LEFT JOIN tracked_symbols t ON t.symbol = b.symbol
+    LEFT JOIN asset_snapshots snap ON snap.id = (
+        SELECT s.id FROM asset_snapshots s WHERE s.symbol = COALESCE(t.symbol, b.symbol) ORDER BY s.snapshot_time DESC, s.id DESC LIMIT 1
+    )
+    LEFT JOIN asset_signal_log sig ON sig.id = (
+        SELECT l.id FROM asset_signal_log l WHERE l.symbol = COALESCE(t.symbol, b.symbol) ORDER BY l.signal_time DESC, l.id DESC LIMIT 1
+    )
+    LEFT JOIN positions pos ON pos.id = (
+        SELECT p.id FROM positions p WHERE p.symbol = COALESCE(t.symbol, b.symbol) AND p.status = 'OPEN' ORDER BY p.id DESC LIMIT 1
+    )
     ORDER BY symbol ASC
 ");
-$rows = $stmt->fetchAll();
-?>
-<!doctype html>
-<html lang="nl">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mijn symbolen</title>
-<link rel="stylesheet" href="/assets/style.css">
-<style>
-body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(180deg,#0b1220,#0f172a);color:#e5e7eb}
-.wrap{max-width:1180px;margin:0 auto;padding:28px 18px 40px}
-.top{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start;margin-bottom:18px}
-h1{margin:0 0 6px}
-.sub{color:#94a3b8}
-.actions a{display:inline-block;text-decoration:none;color:#fff;background:#2563eb;padding:11px 14px;border-radius:10px;font-weight:bold;margin-left:8px}
-.card{background:#111827;border:1px solid #263246;border-radius:18px;overflow:auto}
-table{width:100%;border-collapse:collapse;min-width:900px}
-th,td{padding:13px 10px;text-align:left;border-bottom:1px solid #263246;vertical-align:top}
-th{background:#172033}
-.muted{color:#94a3b8;font-size:13px}
-.delete-btn{display:inline-block;background:#dc2626;color:#fff;text-decoration:none;padding:8px 12px;border-radius:10px;font-weight:bold}
-.empty{padding:30px;color:#94a3b8}
-</style>
-</head>
-<body>
-<div class="wrap">
-    <div class="top">
-        <div>
-            <h1>Mijn symbolen</h1>
-            <div class="sub">Overzicht van opgeslagen tickers voor Trading PY.</div>
-        </div>
-        <div class="actions">
-            <a href="/asset_lookup.php">Asset lookup</a>
-            <a href="/symbol_add.php">Handmatig toevoegen</a>
-        </div>
-    </div>
 
-    <div class="card">
-        <?php if (!$rows): ?>
-            <div class="empty">Nog geen symbolen toegevoegd.</div>
-        <?php else: ?>
-            <table>
-                <thead>
+renderPageStart('Mijn assets', 'Eén overzicht van watchlist, bot-activering, laatste trend en reden.', [
+    ['href' => appUrl('/asset_lookup.php'), 'label' => 'Asset zoeken'],
+    ['href' => appUrl('/dashboard.php'), 'label' => 'Dashboard', 'secondary' => true],
+]);
+?>
+<div class="card span-12">
+    <h2>Overzicht</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
                 <tr>
-                    <th>Symbool</th>
-                    <th>Naam</th>
-                    <th>Type</th>
-                    <th>Beurs</th>
-                    <th>Bron</th>
-                    <th>Notities</th>
-                    <th>Aangemaakt</th>
-                    <th>Actie</th>
+                    <th>Symbool</th><th>Naam</th><th>Type</th><th>Bot</th><th>Prioriteit</th><th>Laatste prijs</th><th>Trend</th><th>Reden</th><th>Positie</th><th>Acties</th>
                 </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($rows as $row): ?>
-                    <tr>
-                        <td><strong><?= h($row['symbol']) ?></strong></td>
-                        <td><?= h($row['display_name'] ?? '') ?></td>
-                        <td><?= h($row['asset_type'] ?? '') ?></td>
-                        <td><?= h($row['exchange_name'] ?? '') ?></td>
-                        <td><?= h($row['source_provider'] ?? '') ?></td>
-                        <td><?= h($row['notes'] ?? '') ?></td>
-                        <td><span class="muted"><?= h($row['created_at']) ?></span></td>
-                        <td>
-                            <a class="delete-btn" href="/symbol_delete.php?id=<?= (int)$row['id'] ?>" onclick="return confirm('Symbool verwijderen?');">
-                                Verwijderen
-                            </a>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
+            </thead>
+            <tbody>
+            <?php if (!$rows): ?>
+                <tr><td colspan="10" class="muted">Nog geen assets geselecteerd.</td></tr>
+            <?php else: foreach ($rows as $row): ?>
+                <tr>
+                    <td><strong><?= h((string)$row['symbol']) ?></strong></td>
+                    <td><?= h((string)($row['display_name'] ?? '')) ?></td>
+                    <td><?= h((string)($row['asset_type'] ?? '')) ?></td>
+                    <td><span class="<?= ((int)($row['is_active'] ?? 0) === 1) ? 'badge badge-good' : 'badge badge-neutral' ?>"><?= ((int)($row['is_active'] ?? 0) === 1) ? 'Actief' : 'Uit' ?></span></td>
+                    <td><?= h((string)($row['priority_order'] ?? '-')) ?></td>
+                    <td><?= formatPrice($row['last_price'] ?? null, 4) ?></td>
+                    <td><span class="<?= badgeClassForTrend($row['trend_state'] ?? null) ?>"><?= h((string)($row['trend_state'] ?? 'ONBEKEND')) ?></span><br><span class="muted">score <?= h((string)($row['trend_score'] ?? '-')) ?></span></td>
+                    <td><?= h((string)($row['signal_reason'] ?? '')) ?></td>
+                    <td><?= $row['quantity'] !== null ? formatQty($row['quantity'], 8) : '-' ?></td>
+                    <td>
+                        <div class="actions">
+                            <a class="btn-link btn-link-secondary btn-small" href="<?= h(appUrl('/asset_analysis.php?symbol=' . urlencode((string)$row['symbol']))) ?>">Analyse</a>
+                            <form method="post" class="inline-form" onsubmit="return confirm('Weet je zeker dat je dit asset wilt verwijderen?');">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="action" value="delete_symbol">
+                                <input type="hidden" name="symbol" value="<?= h((string)$row['symbol']) ?>">
+                                <button type="submit" class="btn-small btn-red">Verwijderen</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            <?php endforeach; endif; ?>
+            </tbody>
+        </table>
     </div>
 </div>
-</body>
-</html>
+<?php renderPageEnd(); ?>

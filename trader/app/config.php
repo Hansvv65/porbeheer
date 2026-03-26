@@ -1,18 +1,23 @@
 <?php
+/* app/config.php */
 declare(strict_types=1);
 
 return [
     'db' => [
-        'host' => 'localhost',
-        'port' => 3306,
-        'dbname' => 'trading_db',
-        'user' => 'trading_user',
-        'pass' => 'fdssgg643tghh$edf#',
+        'host' => getenv('TRADING_DB_HOST') ?: 'localhost',
+        'port' => (int)(getenv('TRADING_DB_PORT') ?: 3306),
+        'dbname' => getenv('TRADING_DB_NAME') ?: 'trading_db',
+        'user' => getenv('TRADING_DB_USER') ?: 'trading_user',
+        'pass' => getenv('TRADING_DB_PASS') ?: 'fdssgg643tghh$edf#',
         'charset' => 'utf8mb4',
     ],
     'app' => [
-        'name' => 'Trading Dashboard',
-        'timezone' => 'Europe/Amsterdam',
-        'base_url' => '',
+        'name' => getenv('TRADING_APP_NAME') ?: 'Trading PY',
+        'timezone' => getenv('TRADING_TIMEZONE') ?: 'Europe/Amsterdam',
+        'base_url' => rtrim((string)(getenv('TRADING_BASE_URL') ?: ''), '/'),
+        'env' => getenv('TRADING_ENV') ?: 'local',
+        'debug' => (getenv('TRADING_DEBUG') ?: '0') === '1',
+        'session_name' => getenv('TRADING_SESSION_NAME') ?: 'trading_py_session',
+        'csrf_key' => getenv('TRADING_CSRF_KEY') ?: 'change-this-local-key',
     ],
 ];
