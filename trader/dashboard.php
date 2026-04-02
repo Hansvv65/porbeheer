@@ -99,6 +99,7 @@ renderPageStart($appName, 'Eén consistent dashboard voor status, wallet, trends
     ['href' => appUrl('/asset_lookup.php'), 'label' => 'Asset zoeken'],
     ['href' => appUrl('/bot_log.php'), 'label' => 'Bot log', 'secondary' => true],
     ['href' => appUrl('/symbols.php'), 'label' => 'Mijn assets', 'secondary' => true],
+    ['href' => appUrl('/view_ai_advice.php'), 'label' => 'Adviezen', 'secondary' => true],
 ]);
 ?>
 <div class="grid">

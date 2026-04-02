@@ -2,6 +2,10 @@
 /* app/config.php */
 declare(strict_types=1);
 
+// API-sleutels
+define('AI_API_KEY', '2rP5DYZa8bDvmy8IjOg8VshUsDCZ63qZ');
+define('NEWS_API_KEY', 'jouw_nieuws_api_sleutel_hier');
+
 return [
     'db' => [
         'host' => getenv('TRADING_DB_HOST') ?: 'localhost',

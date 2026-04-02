@@ -2,8 +2,10 @@
 declare(strict_types=1);
 
 /* asset_analysis.php
-Onafhankelijke pagina voor diepgaande analyse per asset: koersverloop, signalen, strategy runs en trades.
+Onafhankelijke pagina voor diepgaande analyse per asset:
+koersverloop, signalen, strategy runs, trades en nieuws.
 */
+
 require_once __DIR__ . '/app/db.php';
 require_once __DIR__ . '/app/functions.php';
 require_once __DIR__ . '/includes/layout.php';
@@ -85,6 +87,33 @@ $trades = fetchAllRows(
     $pdo,
     'SELECT * FROM trades WHERE asset = ? ORDER BY timestamp DESC, id DESC LIMIT 30',
     [$symbol]
+);
+
+$newsItems = fetchAllRows(
+    $pdo,
+    'SELECT
+        id,
+        symbol,
+        published_at,
+        title,
+        summary,
+        url,
+        source_name,
+        source_provider,
+        language_code,
+        sentiment_score,
+        sentiment_label,
+        importance_score,
+        market_relevance,
+        created_at
+     FROM asset_news
+     WHERE symbol = ? OR symbol IS NULL
+     ORDER BY
+        CASE WHEN symbol = ? THEN 0 ELSE 1 END,
+        published_at DESC,
+        id DESC
+     LIMIT 20',
+    [$symbol, $symbol]
 );
 
 $stats = fetchOne(
@@ -221,6 +250,40 @@ function buildSvgLineChart(array $rows, int $width = 1100, int $height = 280): s
     </svg>';
 }
 
+function safeExternalUrl(?string $url): string
+{
+    $url = trim((string)$url);
+    if ($url === '') {
+        return '';
+    }
+    if (!preg_match('~^https?://~i', $url)) {
+        return '';
+    }
+    return $url;
+}
+
+function badgeClassForSentiment(?string $value): string
+{
+    $value = strtoupper((string)$value);
+    return match ($value) {
+        'POSITIVE' => 'badge positive',
+        'NEGATIVE' => 'badge negative',
+        'MIXED' => 'badge warning',
+        'NEUTRAL' => 'badge neutral',
+        default => 'badge neutral',
+    };
+}
+
+function badgeClassForRelevance(?string $value): string
+{
+    $value = strtoupper((string)$value);
+    return match ($value) {
+        'HIGH' => 'badge positive',
+        'LOW' => 'badge neutral',
+        default => 'badge warning',
+    };
+}
+
 $currentPrice = $latestSnapshot['price'] ?? null;
 $avgPrice = $openPosition['avg_price'] ?? null;
 $quantity = $openPosition['quantity'] ?? null;
@@ -240,10 +303,11 @@ if (
 
 renderPageStart(
     'Asset analyse · ' . $symbol,
-    'Verdieping per asset: status, koersverloop, signalen, strategy-runs en trades.',
+    'Verdieping per asset: status, koersverloop, signalen, strategy-runs, trades en nieuws.',
     [
         ['href' => appUrl('/dashboard.php'), 'label' => 'Dashboard', 'secondary' => true],
         ['href' => appUrl('/asset_lookup.php?q=' . urlencode($symbol)), 'label' => 'Zoeken', 'secondary' => true],
+        ['href' => appUrl('/bot_log.php'), 'label' => 'Bot log', 'secondary' => true],
     ]
 );
 ?>
@@ -276,6 +340,14 @@ renderPageStart(
 .chart-axis-label{
     fill:#64748b;
     font-size:12px;
+}
+.news-title{
+    font-weight:600;
+    line-height:1.4;
+}
+.news-summary{
+    margin-top:6px;
+    line-height:1.5;
 }
 </style>
 
@@ -326,6 +398,71 @@ renderPageStart(
         <h2>Koersgrafiek</h2>
         <div class="chart-wrap">
             <?= buildSvgLineChart($chartRows) ?>
+        </div>
+    </div>
+
+    <div class="card span-12">
+        <h2>Laatste nieuws</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Tijd</th>
+                        <th>Titel / samenvatting</th>
+                        <th>Bron</th>
+                        <th>Relevantie</th>
+                        <th>Sentiment</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php if (!$newsItems): ?>
+                    <tr><td colspan="5" class="muted">Nog geen nieuws gevonden voor dit asset.</td></tr>
+                <?php else: foreach ($newsItems as $row): ?>
+                    <?php $newsUrl = safeExternalUrl($row['url'] ?? null); ?>
+                    <tr>
+                        <td><?= formatDateTime($row['published_at'] ?? null) ?></td>
+                        <td>
+                            <div class="news-title">
+                                <?php if ($newsUrl !== ''): ?>
+                                    <a href="<?= h($newsUrl) ?>" target="_blank" rel="noopener noreferrer"><?= h((string)($row['title'] ?? '')) ?></a>
+                                <?php else: ?>
+                                    <?= h((string)($row['title'] ?? '')) ?>
+                                <?php endif; ?>
+                            </div>
+                            <?php if (!empty($row['summary'])): ?>
+                                <div class="news-summary muted"><?= h((string)$row['summary']) ?></div>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?= h((string)($row['source_name'] ?? '-')) ?>
+                            <?php if (!empty($row['source_provider'])): ?>
+                                <div class="muted small"><?= h((string)$row['source_provider']) ?></div>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <span class="<?= badgeClassForRelevance($row['market_relevance'] ?? null) ?>">
+                                <?= h((string)($row['market_relevance'] ?? 'MEDIUM')) ?>
+                            </span>
+                            <?php if ($row['importance_score'] !== null): ?>
+                                <div class="muted small"><?= h((string)$row['importance_score']) ?></div>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if (!empty($row['sentiment_label'])): ?>
+                                <span class="<?= badgeClassForSentiment($row['sentiment_label'] ?? null) ?>">
+                                    <?= h((string)$row['sentiment_label']) ?>
+                                </span>
+                                <?php if ($row['sentiment_score'] !== null): ?>
+                                    <div class="muted small"><?= h((string)$row['sentiment_score']) ?></div>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <span class="muted">-</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; endif; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 
