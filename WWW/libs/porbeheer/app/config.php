@@ -2,7 +2,6 @@
 declare(strict_types=1);
 
 /**
- * config.php - centrale configuratie.
  * Centrale configuratie.
  *
  * - Geen secrets hardcoded in dit bestand.
@@ -24,7 +23,7 @@ $getSecret = static function (string $key, mixed $default = '') use ($secrets): 
 return [
     'app' => [
         'name'            => 'PorBeheer',
-        'version'         => '2.0.0',
+        'version'         => '1.2.1',
         'timezone'        => 'Europe/Amsterdam',
         'banner_enabled'  => true,
         'banner_envs'     => ['demo', 'development'],
@@ -34,7 +33,8 @@ return [
                 'www.porzbeheer.nl',
             ],
             'demo_hosts' => [
-                'porzdemo.porzbeheer.nl',
+                'demo.porzbeheer.nl',
+                'www.demo.porzbeheer.nl',
             ],
             'development_hosts' => [
                 'localhost',
@@ -100,6 +100,6 @@ return [
     ],
 
     'security' => [
-        'session_idle_timeout' => 1200,
+        'session_idle_timeout' => 300,
     ],
 ];

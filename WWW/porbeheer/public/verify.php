@@ -121,6 +121,7 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $token === ''
   --shadow:0 14px 40px rgba(0,0,0,.45);
   --ok:#7CFFB2;
   --err:#FF8DA1;
+  --info:#bf721f;
 }
 body{
   margin:0;
@@ -167,7 +168,8 @@ body{
   color:var(--ok);
   font-weight:900;
 }
-a{color:#fff}
+a{color:var(--info);text-decoration:none;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.4);}
+a:hover{text-decoration:underline;filter:brightness(1.2);}
 </style>
 </head>
 <body>

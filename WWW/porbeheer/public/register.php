@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </p>
 
                 <p style="margin:18px 0;">
-                  <a href="' . h($fullLink) . '" style="display:inline-block;padding:12px 18px;background:#dfefff;border:1px solid #bdd3ea;border-radius:10px;color:#1f3b57;text-decoration:none;font-weight:700;">
+                  <a href="' . h($fullLink) . '" style="display:inline-block;padding:12px 18px;background:#bf721f;border-radius:10px;color:#ffffff;text-decoration:none;font-weight:700;">
                     E-mailadres bevestigen
                   </a>
                 </p>
@@ -175,7 +175,7 @@ $csrf = csrfToken();
 <style>
 :root{
   --text:#fff; --muted:rgba(255,255,255,.78); --border:rgba(255,255,255,.22);
-  --glass:rgba(255,255,255,.12); --glass2:rgba(255,255,255,.06);
+  --glass:rgba(255,255,255,.12); --glass2:rgba(255,255,255,.06); --info:#bf721f;
   --shadow:0 14px 40px rgba(0,0,0,.45); --ok:#7CFFB2; --err:#FF8DA1;
 }
 body{
@@ -208,12 +208,14 @@ input{
   border:1px solid rgba(255,255,255,.18);outline:none;margin-top:6px;
   background:rgba(0,0,0,.22);color:#fff;box-sizing:border-box
 }
+input:focus { border-color: var(--info); outline: none; }
 .btn{
   margin-top:16px;width:100%;padding:12px 14px;border-radius:12px;
-  border:1px solid rgba(255,255,255,.22);
-  background:linear-gradient(180deg, var(--glass), var(--glass2));
-  color:#fff;font-weight:900;cursor:pointer
+  border:none; background:var(--info);
+  color:#fff;font-weight:900;cursor:pointer;
+  transition:opacity 0.2s;
 }
+.btn:hover{opacity:0.9;}
 .msg{
   margin-top:10px;font-size:13px;padding:10px 12px;border-radius:12px;
   border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08)
@@ -226,7 +228,8 @@ input{
   border-color:rgba(124,255,178,.35);background:rgba(124,255,178,.10);
   color:var(--ok);font-weight:900;
 }
-a{color:#fff}
+a{color:var(--info);text-decoration:none;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.4);}
+a:hover{text-decoration:underline;filter:brightness(1.2);}
 .flow{ display:grid; gap:12px; }
 .step{
   display:grid; grid-template-columns:48px 1fr; gap:12px;
@@ -236,7 +239,7 @@ a{color:#fff}
 .num{
   width:48px;height:48px;border-radius:14px;
   display:flex;align-items:center;justify-content:center;
-  font-weight:900;font-size:18px;background:rgba(255,255,255,.12);
+  font-weight:900;font-size:18px;background:var(--info);color:#fff;
 }
 .small{ font-size:13px; color:var(--muted); }
 </style>

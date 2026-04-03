@@ -155,17 +155,20 @@ $csrf = csrfToken();
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - Wachtwoord vergeten</title>
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);--ok:#7CFFB2;--err:#FF8DA1;}
+:root{--text:#fff;--muted:rgba(255,255,255,.78);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);--ok:#7CFFB2;--err:#FF8DA1;--info:#bf721f;}
 body{margin:0;font-family:Arial,sans-serif;color:var(--text);background:url('/assets/images/loginbg.png') no-repeat center center fixed;background-size:cover;}
 .backdrop{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:26px;box-sizing:border-box;background:radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88));}
 .box{width:min(460px,92vw);border-radius:20px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));box-shadow:var(--shadow);backdrop-filter:blur(12px);padding:22px;}
 label{display:block;margin-top:12px;font-weight:800}
 input{width:100%;padding:11px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.18);outline:none;margin-top:6px;background:rgba(0,0,0,.22);color:#fff;box-sizing:border-box}
-.btn{margin-top:16px;width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.22);background:linear-gradient(180deg, var(--glass), var(--glass2));color:#fff;font-weight:900;cursor:pointer}
+input:focus { border-color: var(--info); outline: none; }
+.btn{margin-top:16px;width:100%;padding:12px 14px;border-radius:12px;border:none;background:var(--info);color:#fff;font-weight:900;cursor:pointer;transition:opacity 0.2s;}
+.btn:hover{opacity:0.9;}
 .msg{margin-top:10px;font-size:13px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08)}
 .msg.err{border-color:rgba(255,141,161,.35);background:rgba(255,141,161,.10);color:var(--err);font-weight:900;}
 .msg.ok{border-color:rgba(124,255,178,.35);background:rgba(124,255,178,.10);color:var(--ok);font-weight:900;}
-a{color:#fff}
+a{color:var(--info);text-decoration:none;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.4);}
+a:hover{text-decoration:underline;filter:brightness(1.2);}
 </style>
 </head>
 <body>
