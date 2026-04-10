@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+/*
+ * budget.php
+ * Beheer begrotingsposten (admin)
+ */
+
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
@@ -13,8 +18,37 @@ $bg = themeImage('finance', $pdo);
 
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
+/**
+ * Bereken de verwachte maandelijkse inkomsten uit abonnementen voor de huidige maand.
+ */
+function calculateMonthlySubscriptionIncome(PDO $pdo, string $monthStart, string $monthEnd): float
+{
+    $st = $pdo->prepare("
+        SELECT SUM(bc.monthly_fee) AS total_monthly_income
+        FROM band_contracts bc
+        JOIN bands b ON b.id = bc.band_id
+        WHERE bc.contract_type = 'ABONNEMENT'
+          AND bc.start_date <= :monthEnd
+          AND bc.end_date >= :monthStart
+          AND b.deleted_at IS NULL
+    ");
+    $st->execute([':monthStart' => $monthStart, ':monthEnd' => $monthEnd]);
+    $result = $st->fetch();
+    return (float)($result['total_monthly_income'] ?? 0);
+}
+
 auditLog($pdo, 'PAGE_VIEW', 'admin/budget.php');
 
+// Bereken de maandelijkse abonnementsinkomsten voor de huidige maand
+$today = new DateTimeImmutable('today');
+$monthStart = $today->modify('first day of this month')->format('Y-m-d');
+$monthEnd = $today->modify('last day of this month')->format('Y-m-d');
+$monthlySubscriptionIncome = calculateMonthlySubscriptionIncome($pdo, $monthStart, $monthEnd);
+
+// Bereken de jaarlijkse abonnementsinkomsten
+$annualSubscriptionIncome = $monthlySubscriptionIncome * 12;
+
+// Haal de bestaande begrotingsposten op
 $rows = $pdo->query("
   SELECT id, name, kind, annual_amount, is_active
   FROM budget_items
@@ -22,6 +56,17 @@ $rows = $pdo->query("
   ORDER BY is_active DESC, kind, name
 ")->fetchAll();
 
+// Voeg de abonnementsinkomsten toe aan de lijst met begrotingsposten
+$subscriptionBudgetItem = [
+    'id' => 0,
+    'name' => 'Abonnementsinkomsten',
+    'kind' => 'income',
+    'annual_amount' => $annualSubscriptionIncome,
+    'is_active' => 1,
+];
+
+// Voeg de abonnementsinkomsten toe aan de bestaande lijst
+$rows[] = $subscriptionBudgetItem;
 ?>
 <!DOCTYPE html>
 <html lang="nl">
@@ -52,7 +97,6 @@ $rows = $pdo->query("
       a{color:#fff;text-decoration:none;transition:color .15s ease}
   a:hover{color:#ffd9b3}
   a:visited{color:#ffe0c2}
-
   </style>
 </head>
 <body>
@@ -89,7 +133,11 @@ $rows = $pdo->query("
             <td><span class="pill"><?= h($r['kind']) ?></span></td>
             <td>€ <?= number_format((float)$r['annual_amount'], 2, ',', '.') ?></td>
             <td><?= ((int)$r['is_active']===1 ? 'actief' : 'inactief') ?></td>
-            <td><a class="btn" href="/admin/budget_edit.php?id=<?= (int)$r['id'] ?>">Bewerken</a></td>
+            <td>
+              <?php if ($r['id'] !== 0): ?>
+                <a class="btn" href="/admin/budget_edit.php?id=<?= (int)$r['id'] ?>">Bewerken</a>
+              <?php endif; ?>
+            </td>
           </tr>
         <?php endforeach; ?>
         </tbody>

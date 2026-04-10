@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 /**
+ * app/config.php
  * Centrale configuratie.
  *
  * - Geen secrets hardcoded in dit bestand.
@@ -20,10 +21,11 @@ $getSecret = static function (string $key, mixed $default = '') use ($secrets): 
     return $secrets[$key] ?? $default;
 };
 
-return [
+// Eerst de basis configuratie opbouwen met env_detection
+$config = [
     'app' => [
         'name'            => 'PorBeheer',
-        'version'         => '1.2.1',
+        'version'         => '2.1.0',
         'timezone'        => 'Europe/Amsterdam',
         'banner_enabled'  => true,
         'banner_envs'     => ['demo', 'development'],
@@ -98,8 +100,25 @@ return [
             'debug'      => (int)$getSecret('POR_MAIL_DEBUG_DEVELOPMENT', 2),
         ],
     ],
-
-    'security' => [
-        'session_idle_timeout' => 300,
-    ],
 ];
+
+// Detecteer de huidige omgeving op basis van de hostname
+$hostname = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+$isDevelopment = false;
+
+foreach ($config['app']['env_detection']['development_hosts'] as $devHost) {
+    if (strpos($hostname, $devHost) !== false) {
+        $isDevelopment = true;
+        break;
+    }
+}
+
+// Bepaal de session idle timeout (1200 voor development, anders 300)
+$sessionIdleTimeout = $isDevelopment ? 1200 : 300;
+
+// Voeg de security configuratie toe
+$config['security'] = [
+    'session_idle_timeout' => $sessionIdleTimeout,
+];
+
+return $config;

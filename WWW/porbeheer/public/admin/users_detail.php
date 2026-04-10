@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 
+/*
+ * Porbeheer - User detail page users_detail.php
+ */
+
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/mail.php';
@@ -40,8 +44,8 @@ function mailLayout(string $title, string $intro, string $contentHtml): string {
     </div>';
 }
 
-$allowedRoles  = ['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER'];
-$rolePriority  = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'ADMIN'=>4];
+$allowedRoles  = ['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID'];
+$rolePriority  = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'BESTUURSLID'=>4,'ADMIN'=>5];
 
 function computePrimaryRole(array $roles, array $priority): string {
     $primary = 'GEBRUIKER';
@@ -300,11 +304,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             auditLog($pdo, 'USER_ROLES_SET', 'admin/users_detail.php', [
                                 'id'=>$id, 'roles'=>implode(',', $roles), 'primary'=>$primary
                             ]);
+/*                        } catch (Throwable $e) {
+                          if ($pdo->inTransaction()) $pdo->rollBack();
+                          $errors[] = 'Opslaan rollen mislukt: ' . $e->getMessage();  // Voeg de echte fout toe
+                          auditLog($pdo, 'USER_ROLES_SET_FAIL', 'admin/users_detail.php', ['id'=>$id, 'err'=>$e->getMessage()]);
+                        }
+*/                        
                         } catch (Throwable $e) {
                             if ($pdo->inTransaction()) $pdo->rollBack();
                             $errors[] = 'Opslaan rollen mislukt.';
                             auditLog($pdo, 'USER_ROLES_SET_FAIL', 'admin/users_detail.php', ['id'=>$id, 'err'=>$e->getMessage()]);
                         }
+                            
                     }
                 }
             }

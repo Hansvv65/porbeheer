@@ -14,6 +14,11 @@ $bg = themeImage('finance', $pdo);
 
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
+function csrfField(): string
+{
+    return '<input type="hidden" name="csrf" value="' . h($_SESSION['csrf'] ?? '') . '">';
+}
+
 auditLog($pdo, 'PAGE_VIEW', 'admin/transaction_new.php');
 
 $accounts = $pdo->query("SELECT id, name FROM finance_accounts WHERE deleted_at IS NULL ORDER BY is_default DESC, name")->fetchAll();

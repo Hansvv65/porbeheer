@@ -30,6 +30,17 @@ function maskValue(?string $value, int $show = 3): string
     return substr($value, 0, $show) . str_repeat('*', max(0, $len - $show));
 }
 
+function formatTimeout(int $seconds): string
+{
+    $minutes = floor($seconds / 60);
+    $remainingSeconds = $seconds % 60;
+    
+    if ($minutes > 0) {
+        return $minutes . ' minuut' . ($minutes !== 1 ? 'en' : '') . ($remainingSeconds > 0 ? ' en ' . $remainingSeconds . ' seconden' : '');
+    }
+    return $seconds . ' seconden';
+}
+
 $phpVersion   = PHP_VERSION;
 $sapi         = PHP_SAPI;
 $serverSoft   = (string)($_SERVER['SERVER_SOFTWARE'] ?? '');
@@ -41,6 +52,10 @@ $appEnv       = defined('APP_ENV') ? APP_ENV : 'onbekend';
 $appUrl       = defined('APP_URL') ? APP_URL : '';
 $appVersion   = defined('APP_VERSION') ? APP_VERSION : '';
 $sessionName  = session_name();
+
+// Session timeout ophalen uit configuratie
+$sessionTimeout = $config['security']['session_idle_timeout'] ?? 300;
+$isDevelopmentEnv = ($sessionTimeout === 1200);
 
 $vendorRoot   = realpath(__DIR__ . '/../cgi-bin/vendor') ?: (__DIR__ . '/../cgi-bin/vendor');
 $appRoot      = realpath(__DIR__ . '/../cgi-bin/app') ?: (__DIR__ . '/../cgi-bin/app');
@@ -184,6 +199,7 @@ $tests = [
     }
     .ok{ color:#166534; font-weight:700; }
     .no{ color:#991b1b; font-weight:700; }
+    .warning{ color:#d97706; font-weight:700; }
     .pill{
       display:inline-block;
       padding:4px 10px;
@@ -192,6 +208,10 @@ $tests = [
       color:#3730a3;
       font-size:12px;
       font-weight:700;
+    }
+    .pill-dev{
+      background:#fef3c7;
+      color:#92400e;
     }
     .small{
       font-size:13px;
@@ -237,6 +257,14 @@ $tests = [
         <div>Host</div><div><?= h($host) ?></div>
         <div>HTTPS</div><div class="<?= $https ? 'ok' : 'no' ?>"><?= yesNo($https) ?></div>
         <div>Sessie naam</div><div><?= h($sessionName) ?></div>
+        <div>Sessie timeout</div>
+        <div>
+          <?php if ($isDevelopmentEnv): ?>
+            <span class="pill pill-dev">⏱️ <?= formatTimeout($sessionTimeout) ?> (Development mode)</span>
+          <?php else: ?>
+            <span class="pill">⏱️ <?= formatTimeout($sessionTimeout) ?> (Production mode)</span>
+          <?php endif; ?>
+        </div>
         <div>Script</div><div><?= h($scriptName) ?></div>
       </div>
     </div>
@@ -299,6 +327,11 @@ $tests = [
       <p class="muted">
         Voor productie is offline QR zonder externe QR-service de veiligste keuze.
       </p>
+      <?php if ($isDevelopmentEnv): ?>
+        <p class="muted" style="color:#92400e; background:#fef3c7; padding:8px; border-radius:8px;">
+          ⚠️ Development modus actief: sessie timeout is verlengd naar <?= formatTimeout($sessionTimeout) ?> voor makkelijker testen.
+        </p>
+      <?php endif; ?>
     </div>
   </div>
 

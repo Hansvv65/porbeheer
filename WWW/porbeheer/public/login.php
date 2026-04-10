@@ -157,15 +157,15 @@ input:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0
       </form>
       <?php else:?>
       <h2>Stap 2 van 2: 2FA‑code</h2>
-      <div class="sub">Account: <strong><?=h((string)($pendingUser['username']??''))?></strong></div>
+      <div class="sub">Hallo, <?=h((string)($pendingUser['username']??''))?>!</div>
       <!-- bestaande telefoon‑SVG behouden -->
       <form method="post" autocomplete="off">
         <input type="hidden" name="csrf" value="<?=h($csrf)?>">
         <input type="hidden" name="action" value="totp">
-        <label>6‑cijferige code uit je app
+        <label>6‑cijferige code uit je Authenticator‑app
           <input class="codeInput" name="totp_code" maxlength="6" required inputmode="numeric" placeholder="000 000" style="text-align:center;letter-spacing:4px;font-size:1.5rem;">
         </label>
-        <button class="btn" type="submit">Code controleren</button>
+        <button class="btn" type="submit">Log in</button>
         <div class="actions"><a class="action" href="/login.php?cancel2fa=1">Opnieuw beginnen</a></div>
       </form>
       <?php endif;?>

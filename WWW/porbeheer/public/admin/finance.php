@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+/*
+ * finance.php
+ * Financieel dashboard (admin)
+ */
+
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
@@ -15,6 +20,25 @@ $bg = themeImage('finance', $pdo);
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/finance.php');
+
+/**
+ * Bereken de verwachte maandelijkse inkomsten uit abonnementen voor de huidige maand.
+ */
+function calculateMonthlySubscriptionIncome(PDO $pdo, string $monthStart, string $monthEnd): float
+{
+    $st = $pdo->prepare("
+        SELECT SUM(bc.monthly_fee) AS total_monthly_income
+        FROM band_contracts bc
+        JOIN bands b ON b.id = bc.band_id
+        WHERE bc.contract_type = 'ABONNEMENT'
+          AND bc.start_date <= :monthEnd
+          AND bc.end_date >= :monthStart
+          AND b.deleted_at IS NULL
+    ");
+    $st->execute([':monthStart' => $monthStart, ':monthEnd' => $monthEnd]);
+    $result = $st->fetch();
+    return (float)($result['total_monthly_income'] ?? 0);
+}
 
 /*
 
@@ -37,6 +61,8 @@ $daypartPrice = (float)getSetting($pdo, 'daypart_price', '0.00');
 $today = new DateTimeImmutable('today');
 $monthStart = $today->modify('first day of this month')->format('Y-m-d');
 $monthEnd   = $today->modify('last day of this month')->format('Y-m-d');
+// Bereken de maandelijkse abonnementsinkomsten
+$monthlySubscriptionIncome = calculateMonthlySubscriptionIncome($pdo, $monthStart, $monthEnd);
 
 /* Accounts */
 $accounts = $pdo->query("SELECT id, name, opening_balance, is_default FROM finance_accounts WHERE deleted_at IS NULL ORDER BY is_default DESC, name")->fetchAll();
@@ -102,8 +128,6 @@ $tiles = [
   ['title'=>'Begroting',        'href'=>'/admin/budget.php', 'roles'=>['ADMIN','BEHEER','FINANCIEEL']],
   ['title'=>'Facturen',         'href'=>'/admin/invoices.php', 'roles'=>['ADMIN','BEHEER','FINANCIEEL']],
   ['title'=>'Genereer facturen','href'=>'/admin/invoice_run.php', 'roles'=>['ADMIN','BEHEER','FINANCIEEL']],
-  ['title'=>'Dashboard',        'href'=>'/admin/dashboard.php', 'roles'=>['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER']],
-  ['title'=>'Uitloggen',        'href'=>'/logout.php', 'roles'=>['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER']],
 ];
 
 function allowedTile(array $tile, string $role): bool {
@@ -349,7 +373,15 @@ function allowedTile(array $tile, string $role): bool {
             <div class="s">Resultaat: € <?= number_format(((float)$m['incm']-(float)$m['expm']), 2, ',', '.') ?></div>
           </div>
         </div>
-
+        <div class="kpiRow">
+        <!-- Nieuwe KPI voor abonnementsinkomsten -->
+        <div class="kpi">
+            <h3>Abonnementsinkomsten (deze maand)</h3>
+            <div class="v">€ <?= number_format($monthlySubscriptionIncome, 2, ',', '.') ?></div>
+            <div class="s">Verwachte inkomsten uit actieve abonnementen.</div>
+        </div>
+        <!-- ... andere KPI's ... -->
+        </div>
         <div class="grid" style="margin-top:14px;">
           <?php foreach ($tiles as $t): ?>
             <?php
