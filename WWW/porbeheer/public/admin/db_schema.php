@@ -109,6 +109,10 @@ $schemaText = '';
 $error = null;
 
 try {
+    // ✅ Nieuw: database versie ophalen
+    $stmtVersion = $pdo->query("SELECT VERSION()");
+    $dbVersion = $stmtVersion->fetchColumn();
+
     // Tabellen
     $stTables = $pdo->prepare("
         SELECT
@@ -322,6 +326,7 @@ try {
     $lines[] = "============================================================";
     $lines[] = "DATABASE SCHEMA OVERZICHT";
     $lines[] = "============================================================";
+    $lines[] = "Versie (DB)     : " . $dbVersion;   // ✅ nieuw
     $lines[] = "Database        : " . $dbName;
     $lines[] = "Gegenereerd op  : " . date('Y-m-d H:i:s');
     $lines[] = "Aantal tabellen : " . count($tables);

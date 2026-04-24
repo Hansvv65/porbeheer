@@ -25,7 +25,7 @@ $getSecret = static function (string $key, mixed $default = '') use ($secrets): 
 $config = [
     'app' => [
         'name'            => 'PorBeheer',
-        'version'         => '2.1.0',
+        'version'         => '2.3.0',
         'timezone'        => 'Europe/Amsterdam',
         'banner_enabled'  => true,
         'banner_envs'     => ['demo', 'development'],

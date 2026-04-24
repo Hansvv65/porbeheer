@@ -1,5 +1,6 @@
 <?php
-// /public/admin/keys.php
+/*admin/keys.php - Overzicht POR-kasten + sleutels (voorraad / uitgegeven) in één overzicht*/
+
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
@@ -29,11 +30,6 @@ $lockers = [];
 $keys    = [];
 
 try {
-    /**
-     * Latest tx per key (MAX(id)) => ISSUE = uitgegeven, RETURN = in voorraad.
-     * We gebruiken dit in beide overzichten.
-     */
-
     // 1) POR-kasten overzicht
     $sqlLockers = "
       SELECT
@@ -74,7 +70,7 @@ try {
     ";
     $lockers = $pdo->query($sqlLockers)->fetchAll(PDO::FETCH_ASSOC);
 
-    // 2) Sleutels overzicht (uitgebreid met key_type)
+    // 2) Sleutels overzicht (uitgebreid met contract info)
     $sqlKeys = "
       SELECT
         k.id,
@@ -96,7 +92,10 @@ try {
         c.name AS contact_name,
 
         ktd.id AS doc_id,
-        ktd.original_name AS doc_name
+        ktd.original_name AS doc_name,
+
+        kc.id AS contract_id,
+        kc.signed_contract_path
 
       FROM `keys` k
       LEFT JOIN lockers l ON l.id = k.locker_id AND l.deleted_at IS NULL
@@ -114,6 +113,8 @@ try {
 
       LEFT JOIN contacts c ON c.id = kt.contact_id AND c.deleted_at IS NULL
       LEFT JOIN key_transaction_docs ktd ON ktd.transaction_id = kt.id
+
+      LEFT JOIN key_contracts kc ON kc.key_id = k.id
 
       WHERE k.deleted_at IS NULL
       ORDER BY
@@ -188,7 +189,8 @@ a{color:#fff;text-decoration:none} a:hover{color:#ffd9b3}
 .btn{display:inline-block;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.22);
   background:linear-gradient(180deg, var(--glass), var(--glass2));color:#fff;font-weight:800;cursor:pointer}
 .btn:hover{border-color:rgba(255,255,255,.38);transform:translateY(-1px)}
-.btn-sm{padding:6px 10px;font-weight:800;border-radius:10px}
+.btn-sm{padding:6px 10px;font-weight:800;border-radius:10px;margin-right:5px;}
+.btn-contract{background:linear-gradient(180deg, #2c7da0, #1f5068);border-color:#4a9fc5;}
 .badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:12px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08)}
 .badge-ok{border-color:rgba(140,255,170,.35)}
 .badge-warn{border-color:rgba(255,220,140,.35)}
@@ -197,6 +199,9 @@ a{color:#fff;text-decoration:none} a:hover{color:#ffd9b3}
 code{background:rgba(0,0,0,.25);padding:2px 6px;border-radius:8px;border:1px solid rgba(255,255,255,.12)}
 .kpi{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
 .kpi .pill{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);border-radius:999px;padding:6px 10px;font-size:13px;color:var(--muted)}
+.toggle-buttons{display:flex;gap:10px;margin-bottom:10px;}
+.toggle-btn{background:var(--glass);border:1px solid var(--border);color:#fff;padding:8px 16px;border-radius:30px;cursor:pointer;font-weight:bold;}
+.toggle-btn.active{background:#2c7da0;border-color:#4a9fc5;}
 hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
 a{color:#fff;text-decoration:none;transition:color .15s ease}
 a:hover{color:#ffd9b3}
@@ -231,9 +236,15 @@ a:visited{color:#ffe0c2}
     <?php if ($msg): ?><div class="msg"><?= h($msg) ?></div><?php endif; ?>
     <?php if ($err): ?><div class="msg err"><?= h($err) ?></div><?php endif; ?>
 
-    <div class="grid">
+    <!-- Toggle knoppen -->
+    <div class="toggle-buttons">
+      <button class="toggle-btn" id="showLockersBtn">📦 POR-kasten</button>
+      <button class="toggle-btn active" id="showKeysBtn">🔑 Sleutels</button>
+    </div>
 
-      <div class="card" id="kasten">
+    <div class="grid">
+      <!-- POR-kasten card -->
+      <div class="card" id="kastenCard" style="display: none;">
         <h2>Overzicht POR-kasten</h2>
         <div class="small"><?= (int)$lockerCount ?> kasten · vrije kasten: <?= (int)$freeLockers ?></div>
 
@@ -301,7 +312,8 @@ a:visited{color:#ffe0c2}
         </div>
       </div>
 
-      <div class="card" id="sleutels">
+      <!-- Sleutels card (default zichtbaar) -->
+      <div class="card" id="sleutelsCard">
         <h2>Overzicht sleutels</h2>
         <div class="small"><?= (int)$keyCount ?> sleutels</div>
 
@@ -327,6 +339,7 @@ a:visited{color:#ffe0c2}
                 $name    = trim((string)($r['description'] ?? ''));
                 $slot    = $r['key_slot'] !== null ? (int)$r['key_slot'] : null;
                 $active  = (int)($r['active'] ?? 1) === 1;
+                $isIssued = ($r['last_action'] ?? '') === 'ISSUE';
 
                 $keyType = (string)($r['key_type'] ?? 'LOCKER');
 
@@ -352,6 +365,7 @@ a:visited{color:#ffe0c2}
                 $contactId   = $r['tx_contact_id'] ? (int)$r['tx_contact_id'] : 0;
                 $contactName = (string)($r['contact_name'] ?? 'Onbekend');
                 $docId       = $r['doc_id'] ? (int)$r['doc_id'] : 0;
+                $contractId  = $r['contract_id'] ? (int)$r['contract_id'] : 0;
 
                 $label = $name !== '' ? $name : ('Sleutel ' . $code);
               ?>
@@ -381,21 +395,22 @@ a:visited{color:#ffe0c2}
                       <?php endif; ?>
 
                       <?php if ($docId > 0): ?>
-                        · <a href="/admin/key_doc_view.php?id=<?= $docId ?>">Contract</a>
-                      <?php else: ?>
-                        · <span class="small">Geen contract</span>
+                        · <a href="/admin/key_doc_view.php?id=<?= $docId ?>">Document</a>
                       <?php endif; ?>
                     </div>
                   <?php endif; ?>
                 </td>
                 <td>
-                  <a href="/admin/keys_view.php?id=<?= $keyId ?>"><?= h($label) ?></a>
+                  <?= h($label) ?>
                   <?php if (!$active): ?>
                     <span class="badge badge-off">Inactief</span>
                   <?php endif; ?>
                 </td>
                 <td>
                   <a class="btn btn-sm" href="/admin/keys_edit.php?id=<?= $keyId ?>">Bewerken</a>
+                      <?php if ($isIssued): ?>
+                          <a class="btn btn-sm btn-contract" href="/admin/contract_edit.php?id=<?= $keyId ?>" title="Contract bekijken">📄 Contract</a>
+                      <?php endif; ?>
                 </td>
               </tr>
             <?php endforeach; endif; ?>
@@ -412,5 +427,33 @@ a:visited{color:#ffe0c2}
   </div>
 
 </div></div>
+
+<script>
+// Toggle functionaliteit voor kasten / sleutels
+const showLockersBtn = document.getElementById('showLockersBtn');
+const showKeysBtn = document.getElementById('showKeysBtn');
+const kastenCard = document.getElementById('kastenCard');
+const sleutelsCard = document.getElementById('sleutelsCard');
+
+function setActiveView(view) {
+  if (view === 'lockers') {
+    kastenCard.style.display = 'block';
+    sleutelsCard.style.display = 'none';
+    showLockersBtn.classList.add('active');
+    showKeysBtn.classList.remove('active');
+  } else {
+    kastenCard.style.display = 'none';
+    sleutelsCard.style.display = 'block';
+    showKeysBtn.classList.add('active');
+    showLockersBtn.classList.remove('active');
+  }
+}
+
+showLockersBtn.addEventListener('click', () => setActiveView('lockers'));
+showKeysBtn.addEventListener('click', () => setActiveView('keys'));
+
+// Standaard sleutels tonen (keys actief)
+setActiveView('keys');
+</script>
 </body>
 </html>

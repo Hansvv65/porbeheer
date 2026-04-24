@@ -73,6 +73,123 @@ function startSecureSession(): void
     }
 }
 
+/**
+ * Haal alle rollen van de huidige gebruiker op
+ * Gebruikt sessie caching voor performance
+ */
+function getUserRoles(PDO $pdo): array {
+    if (!isLoggedIn()) {
+        return [];
+    }
+    
+    $userId = $_SESSION['user']['id'] ?? 0;
+    if ($userId <= 0) {
+        return [];
+    }
+    
+    // Gebruik sessie cache als die bestaat
+    if (isset($_SESSION['user']['all_roles']) && is_array($_SESSION['user']['all_roles'])) {
+        return $_SESSION['user']['all_roles'];
+    }
+    
+    try {
+        $stmt = $pdo->prepare("SELECT role FROM user_roles WHERE user_id = ?");
+        $stmt->execute([$userId]);
+        $roles = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        // Als er geen rollen zijn in user_roles, gebruik de primaire rol als fallback
+        if (empty($roles)) {
+            $roles = [$_SESSION['user']['role'] ?? 'GEBRUIKER'];
+        }
+        
+        // Sla op in sessie voor caching
+        $_SESSION['user']['all_roles'] = $roles;
+        
+        return $roles;
+    } catch (Throwable $e) {
+        return [$_SESSION['user']['role'] ?? 'GEBRUIKER'];
+    }
+}
+
+/**
+ * Check of de huidige gebruiker een specifieke rol heeft
+ */
+function hasRole(PDO $pdo, string $role): bool {
+    $roles = getUserRoles($pdo);
+    return in_array($role, $roles, true);
+}
+
+/**
+ * Check of de huidige gebruiker één van de opgegeven rollen heeft
+ */
+function hasAnyRole(PDO $pdo, array $roles): bool {
+    $userRoles = getUserRoles($pdo);
+    foreach ($roles as $role) {
+        if (in_array($role, $userRoles, true)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Check of de huidige gebruiker ALLE opgegeven rollen heeft
+ */
+function hasAllRoles(PDO $pdo, array $roles): bool {
+    $userRoles = getUserRoles($pdo);
+    foreach ($roles as $role) {
+        if (!in_array($role, $userRoles, true)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Vervang de bestaande requireRole functie
+ * Checkt of gebruiker minimaal één van de opgegeven rollen heeft
+ */
+function requireRole(array $roles): void
+{
+    requireLogin();
+    
+    global $pdo;
+    
+    if (!hasAnyRole($pdo, $roles)) {
+        http_response_code(403);
+        exit('Geen toegang. Je hebt niet de juiste rechten.');
+    }
+}
+
+/**
+ * Synchroniseer de primaire rol in users tabel op basis van de hoogste prioriteit
+ */
+function syncPrimaryRole(PDO $pdo, int $userId): void {
+    $rolePriority = ['GEBRUIKER' => 1, 'FINANCIEEL' => 2, 'BEHEER' => 3, 'BESTUURSLID' => 4, 'ADMIN' => 5];
+    
+    $stmt = $pdo->prepare("SELECT role FROM user_roles WHERE user_id = ?");
+    $stmt->execute([$userId]);
+    $roles = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    if (empty($roles)) {
+        return;
+    }
+    
+    // Bepaal de rol met de hoogste prioriteit
+    $primaryRole = 'GEBRUIKER';
+    $highestPriority = 0;
+    foreach ($roles as $role) {
+        $priority = $rolePriority[$role] ?? 0;
+        if ($priority > $highestPriority) {
+            $highestPriority = $priority;
+            $primaryRole = $role;
+        }
+    }
+    
+    // Update de users tabel
+    $pdo->prepare("UPDATE users SET role = ? WHERE id = ?")->execute([$primaryRole, $userId]);
+}
+
 function csrfToken(): string
 {
     if (empty($_SESSION['csrf'])) {
@@ -140,17 +257,6 @@ function requireLogin(): void
     }
 
     enforce2faSetupIfNeeded();
-}
-
-function requireRole(array $roles): void
-{
-    requireLogin();
-
-    $role = $_SESSION['user']['role'] ?? 'GEBRUIKER';
-    if (!in_array($role, $roles, true)) {
-        http_response_code(403);
-        exit('Geen toegang.');
-    }
 }
 
 function clientIp(): string
@@ -250,12 +356,22 @@ function refreshSessionUser(PDO $pdo, int $userId): void
     ");
     $st->execute([$userId]);
     $u = $st->fetch(PDO::FETCH_ASSOC);
-
+    
     if ($u) {
+        // Haal alle rollen op uit user_roles
+        $rolesStmt = $pdo->prepare("SELECT role FROM user_roles WHERE user_id = ?");
+        $rolesStmt->execute([$userId]);
+        $allRoles = $rolesStmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        if (empty($allRoles)) {
+            $allRoles = [(string)($u['role'] ?? 'GEBRUIKER')];
+        }
+        
         $_SESSION['user'] = [
             'id'             => (int)$u['id'],
             'username'       => (string)$u['username'],
             'role'           => (string)($u['role'] ?? 'GEBRUIKER'),
+            'all_roles'      => $allRoles,
             'theme_variant'  => normalizeThemeVariant((string)($u['theme_variant'] ?? 'a')),
             'must_setup_2fa' => empty($u['totp_enabled']),
         ];
@@ -281,7 +397,17 @@ function loadAuthUserById(PDO $pdo, int $userId): ?array
 function completeLoginSession(PDO $pdo, array $u, bool $mustSetup2fa): void
 {
     $uid = (int)$u['id'];
-
+    
+    // Haal alle rollen op uit user_roles
+    $rolesStmt = $pdo->prepare("SELECT role FROM user_roles WHERE user_id = ?");
+    $rolesStmt->execute([$uid]);
+    $allRoles = $rolesStmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    if (empty($allRoles)) {
+        // Fallback: gebruik de primaire rol uit users tabel
+        $allRoles = [(string)($u['role'] ?? 'GEBRUIKER')];
+    }
+    
     $pdo->prepare("
         UPDATE users
         SET failed_attempts = 0,
@@ -290,15 +416,16 @@ function completeLoginSession(PDO $pdo, array $u, bool $mustSetup2fa): void
             updated_at = NOW()
         WHERE id = ?
     ")->execute([$uid]);
-
+    
     $_SESSION['user'] = [
         'id'             => $uid,
         'username'       => (string)$u['username'],
         'role'           => (string)($u['role'] ?? 'GEBRUIKER'),
+        'all_roles'      => $allRoles,
         'theme_variant'  => normalizeThemeVariant((string)($u['theme_variant'] ?? 'a')),
         'must_setup_2fa' => $mustSetup2fa,
     ];
-
+    
     unset($_SESSION['pending_2fa']);
     session_regenerate_id(true);
 }
@@ -345,26 +472,48 @@ function buildTwoFactorAuth(): \RobThree\Auth\TwoFactorAuth
         return $tfa;
     }
 
-    $autoload = dirname(__DIR__) . '/vendor/autoload.php';
-    $qrProvider = __DIR__ . '/Qr/QrSvgProvider.php';
+    $projectRoot = defined('PROJECT_ROOT') ? PROJECT_ROOT : dirname(__DIR__);
+    $vendorAutoload = $projectRoot . '/vendor/autoload.php';
+    $qrProvider = $projectRoot . '/vendor/Qr/QrSvgProvider.php';
 
-    if (!is_file($autoload)) {
-        throw new RuntimeException('Composer autoload ontbreekt in public/cgi-bin/vendor/autoload.php');
+    if (!is_file($vendorAutoload)) {
+        throw new RuntimeException('Composer autoload ontbreekt op: ' . $vendorAutoload);
     }
-    if (!is_file($qrProvider)) {
-        throw new RuntimeException('QrSvgProvider ontbreekt in public/cgi-bin/app/Qr/QrSvgProvider.php');
+    
+    require_once $vendorAutoload;
+    
+    if (!class_exists('\\App\\Qr\\QrSvgProvider') && is_file($qrProvider)) {
+        require_once $qrProvider;
+    }
+    
+    if (!class_exists('\\App\\Qr\\QrSvgProvider')) {
+        throw new RuntimeException('QrSvgProvider niet gevonden op: ' . $qrProvider);
     }
 
-    require_once $autoload;
-    require_once $qrProvider;
-
-    $tfa = new \RobThree\Auth\TwoFactorAuth(
-        new \App\Qr\QrSvgProvider(),
-        'Porbeheer'
-    );
-
+    // Bepaal de juiste manier om de library te instantieren
+    try {
+        // Probeer de nieuwe manier met enum (PHP 8.1+)
+        if (enum_exists('RobThree\Auth\Algorithm')) {
+            $tfa = new \RobThree\Auth\TwoFactorAuth(
+                issuer: 'Porbeheer',
+                qrcodeprovider: new \App\Qr\QrSvgProvider()
+            );
+        } 
+        // Probeer de oude manier met string
+        else {
+            $tfa = new \RobThree\Auth\TwoFactorAuth(
+                'Porbeheer',
+                new \App\Qr\QrSvgProvider()
+            );
+        }
+    } catch (Throwable $e) {
+        // Fallback: probeer met alleen issuer
+        $tfa = new \RobThree\Auth\TwoFactorAuth('Porbeheer');
+    }
+    
     return $tfa;
 }
+
 
 function attemptPrimaryLogin(PDO $pdo, string $username, string $password): array
 {

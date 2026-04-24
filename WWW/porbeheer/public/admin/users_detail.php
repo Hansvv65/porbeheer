@@ -55,6 +55,18 @@ function computePrimaryRole(array $roles, array $priority): string {
     return $primary;
 }
 
+// Nieuwe functie om rollen met prioriteit op te halen
+function getUserAllRolesWithPriority(PDO $pdo, int $userId, array $priority): array {
+    $roles = loadRoles($pdo, $userId);
+    $rolesWithPriority = [];
+    foreach ($roles as $role) {
+        $rolesWithPriority[$role] = $priority[$role] ?? 0;
+    }
+    // Sorteer op prioriteit (hoogste eerst)
+    arsort($rolesWithPriority);
+    return $rolesWithPriority;
+}
+
 function loadUser(PDO $pdo, int $id): array {
     $st = $pdo->prepare("SELECT * FROM users WHERE id=? LIMIT 1");
     $st->execute([$id]);
@@ -132,6 +144,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (in_array($action, ['block','soft_delete','hard_delete'], true) && $isSelf) {
         $errors[] = 'Je kunt deze actie niet op jezelf uitvoeren.';
     } else {
+
+        // NIEUW: Actie voor het wijzigen van de primaire rol
+        if ($action === 'set_primary_role') {
+            if ($isDeleted) {
+                $errors[] = 'User is verwijderd. Herstel eerst.';
+            } else {
+                $newPrimaryRole = (string)($_POST['primary_role'] ?? '');
+                
+                // Valideer of de rol bestaat en of de gebruiker deze rol daadwerkelijk heeft
+                if (!in_array($newPrimaryRole, $allowedRoles, true)) {
+                    $errors[] = 'Ongeldige primaire rol.';
+                } elseif (!in_array($newPrimaryRole, $rolesNow, true)) {
+                    $errors[] = 'Gebruiker heeft deze rol niet. Voeg de rol eerst toe via "Rollen opslaan".';
+                } else {
+                    try {
+                        // Update de primaire rol in de users tabel
+                        $pdo->prepare("UPDATE users SET role = ? WHERE id = ?")->execute([$newPrimaryRole, $id]);
+                        
+                        // Als dit de ingelogde gebruiker is, update ook de sessie
+                        if ($id === $currentUserId) {
+                            $_SESSION['user']['role'] = $newPrimaryRole;
+                        }
+                        
+                        $success = 'Primaire rol gewijzigd naar: ' . h($newPrimaryRole);
+                        auditLog($pdo, 'USER_PRIMARY_ROLE_CHANGE', 'admin/users_detail.php', [
+                            'id' => $id, 
+                            'old_role' => $target['role'], 
+                            'new_role' => $newPrimaryRole
+                        ]);
+                        
+                        // Herlaad de user data
+                        $target = loadUser($pdo, $id);
+                    } catch (Throwable $e) {
+                        $errors[] = 'Wijzigen primaire rol mislukt.';
+                        auditLog($pdo, 'USER_PRIMARY_ROLE_CHANGE_FAIL', 'admin/users_detail.php', [
+                            'id' => $id, 
+                            'err' => $e->getMessage()
+                        ]);
+                    }
+                }
+            }
+        }
 
         if ($action === 'save_profile') {
             if ($isDeleted) {
@@ -268,6 +322,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+
+       if ($action === 'set_roles') {
+    if ($isDeleted) $errors[] = 'User is verwijderd. Herstel eerst.';
+    else {
+        $roles = $_POST['roles'] ?? [];
+        if (!is_array($roles)) $roles = [];
+        $roles = array_values(array_unique(array_filter($roles, fn($r) => in_array($r, $allowedRoles, true))));
+
+        if (!$roles) $errors[] = 'Kies minimaal 1 rol.';
+        else {
+            if ($isTargetAdmin && !in_array('ADMIN', $roles, true)) {
+                $errors[] = 'ADMIN rol kan niet verwijderd worden van een ADMIN account.';
+            }
+
+            $adminCount    = countAdmins($pdo);
+            $willHaveAdmin  = in_array('ADMIN', $roles, true);
+            if ($isTargetAdmin && !$willHaveAdmin && $adminCount <= 1) {
+                $errors[] = 'Je kunt de laatste ADMIN niet downgraden.';
+            }
+
+            if (!$errors) {
+                try {
+                    $pdo->beginTransaction();
+
+                    // Verwijder bestaande rollen
+                    $pdo->prepare("DELETE FROM user_roles WHERE user_id=?")->execute([$id]);
+                    
+                    // Voeg nieuwe rollen toe
+                    $ins = $pdo->prepare("INSERT INTO user_roles (user_id, role) VALUES (?, ?)");
+                    foreach ($roles as $r) {
+                        $ins->execute([$id, $r]);
+                    }
+
+                    // Synchroniseer de primaire rol in users tabel
+                    syncPrimaryRole($pdo, $id);
+
+                    $pdo->commit();
+
+                    // Update sessie als dit de ingelogde gebruiker is
+                    if ($id === $currentUserId) {
+                        refreshSessionUser($pdo, $id);
+                    }
+
+                    $success = 'Rollen opgeslagen.';
+                    auditLog($pdo, 'USER_ROLES_SET', 'admin/users_detail.php', [
+                        'id'=>$id, 'roles'=>implode(',', $roles)
+                    ]);
+                } catch (Throwable $e) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    $errors[] = 'Opslaan rollen mislukt.';
+                    auditLog($pdo, 'USER_ROLES_SET_FAIL', 'admin/users_detail.php', ['id'=>$id, 'err'=>$e->getMessage()]);
+                }
+            }
+        }
+    }
+} 
+
+        /*
+
         if ($action === 'set_roles') {
             if ($isDeleted) $errors[] = 'User is verwijderd. Herstel eerst.';
             else {
@@ -304,12 +417,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             auditLog($pdo, 'USER_ROLES_SET', 'admin/users_detail.php', [
                                 'id'=>$id, 'roles'=>implode(',', $roles), 'primary'=>$primary
                             ]);
-/*                        } catch (Throwable $e) {
-                          if ($pdo->inTransaction()) $pdo->rollBack();
-                          $errors[] = 'Opslaan rollen mislukt: ' . $e->getMessage();  // Voeg de echte fout toe
-                          auditLog($pdo, 'USER_ROLES_SET_FAIL', 'admin/users_detail.php', ['id'=>$id, 'err'=>$e->getMessage()]);
-                        }
-*/                        
                         } catch (Throwable $e) {
                             if ($pdo->inTransaction()) $pdo->rollBack();
                             $errors[] = 'Opslaan rollen mislukt.';
@@ -320,6 +427,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+
+*/
 
         if ($action === 'soft_delete') {
             $reason = trim((string)($_POST['delete_reason'] ?? ''));
@@ -843,8 +952,9 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
           </form>
         </div>
 
+        <!-- VERVIEGENDIGD/UITGEBREID ROLBLOK MET PRIMAIRE ROL SELECTIE -->
         <div class="box">
-          <div class="label">Rollen</div>
+          <div class="label">Rollen & Primaire rol</div>
 
           <form method="post" style="margin-top:10px">
             <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
@@ -867,11 +977,47 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
             </div>
 
             <div class="row" style="margin-top:12px;">
-              <button class="btn small" type="submit" name="action" value="set_roles" <?= $isDeleted ? 'disabled' : '' ?>>Rollen opslaan</button>
-              <span class="small">Primair (users.role): <span class="badge"><?= h((string)$target['role']) ?></span></span>
+              <button class="btn small" type="submit" name="action" value="set_roles" <?= $isDeleted ? 'disabled' : '' ?>>
+                Rollen opslaan
+              </button>
             </div>
 
-            <div class="small">
+            <div class="hr"></div>
+
+            <div class="label">Primaire rol (gebruikt voor sessie en weergave)</div>
+            
+            <?php
+            // Haal alle rollen op met prioriteit
+            $rolesWithPriority = getUserAllRolesWithPriority($pdo, $id, $rolePriority);
+            $currentPrimary = (string)$target['role'];
+            ?>
+            
+            <select name="primary_role" class="inp" style="margin-top:8px;" <?= $isDeleted ? 'disabled' : '' ?>>
+                <?php if (empty($rolesWithPriority)): ?>
+                    <option value="GEBRUIKER" <?= $currentPrimary === 'GEBRUIKER' ? 'selected' : '' ?>>GEBRUIKER (standaard)</option>
+                <?php else: ?>
+                    <?php foreach ($rolesWithPriority as $role => $priority): ?>
+                        <option value="<?= h($role) ?>" <?= $role === $currentPrimary ? 'selected' : '' ?>>
+                            <?= h($role) ?> (prioriteit: <?= $priority ?>)
+                        </option>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </select>
+
+            <div class="row" style="margin-top:12px;">
+                <button class="btn ok small" type="submit" name="action" value="set_primary_role" <?= $isDeleted ? 'disabled' : '' ?>>
+                    Primaire rol wijzigen
+                </button>
+            </div>
+
+            <div class="small" style="margin-top:8px;">
+                💡 Huidige primaire rol: <span class="badge <?= $currentPrimary === 'ADMIN' ? 'ok' : '' ?>">
+                    <?= h($currentPrimary) ?>
+                </span><br>
+                <span style="font-size:11px;">De primaire rol wordt gebruikt voor de sessie en beïnvloedt welke pagina's de gebruiker standaard te zien krijgt.</span>
+            </div>
+
+            <div class="small" style="margin-top:8px;">
               Beveiliging: ADMIN rol kan niet worden verwijderd van een ADMIN-account. Laatste ADMIN kan niet gedowngraded worden.
             </div>
           </form>

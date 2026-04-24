@@ -17,10 +17,6 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/planning.php');
 |--------------------------------------------------------------------------
 | 2-weken navigatie
 |--------------------------------------------------------------------------
-| offset = aantal weken vanaf huidige week
-| 0  = huidige week + volgende week
-| -1 = vorige week + huidige week
-| 1  = volgende week + week daarna
 */
 $offset = (int)($_GET['offset'] ?? 0);
 
@@ -33,7 +29,7 @@ $prevOffset = $offset - 1;
 $nextOffset = $offset + 1;
 
 /**
- * Check of band_planner_events bestaat, zodat planning nooit crasht.
+ * Check of band_planner_events bestaat
  */
 $hasContractEvents = false;
 try {
@@ -44,16 +40,18 @@ try {
 }
 
 /**
- * 1) schedule (handmatig / bestaand)
+ * 1) schedule (handmatig / bestaand) – haal nu ook start_time en end_time op
  */
 $stmt = $pdo->prepare("
   SELECT
-    'SCHEDULE' AS src,
-    s.id       AS item_id,
-    s.date     AS date,
-    s.timeslot AS timeslot,
-    b.id       AS band_id,
-    b.name     AS band_name
+    'SCHEDULE'   AS src,
+    s.id         AS item_id,
+    s.date       AS date,
+    s.timeslot   AS timeslot,
+    s.start_time AS start_time,
+    s.end_time   AS end_time,
+    b.id         AS band_id,
+    b.name       AS band_name
   FROM schedule s
   JOIN bands b ON b.id = s.band_id
   WHERE s.date BETWEEN ? AND ?
@@ -63,17 +61,19 @@ $stmt->execute([$rangeStart->format('Y-m-d'), $rangeEnd->format('Y-m-d')]);
 $data = $stmt->fetchAll();
 
 /**
- * 2) band_planner_events (contract/repeterend) — alleen als tabel bestaat
+ * 2) band_planner_events (contract) – deze hebben geen handmatige tijden
  */
 if ($hasContractEvents) {
     $stmt = $pdo->prepare("
       SELECT
-        'CONTRACT'      AS src,
-        e.id            AS item_id,
-        e.event_date    AS date,
-        e.daypart       AS timeslot,
-        b.id            AS band_id,
-        b.name          AS band_name
+        'CONTRACT'   AS src,
+        e.id         AS item_id,
+        e.event_date AS date,
+        e.daypart    AS timeslot,
+        NULL         AS start_time,
+        NULL         AS end_time,
+        b.id         AS band_id,
+        b.name       AS band_name
       FROM band_planner_events e
       JOIN bands b ON b.id = e.band_id
       WHERE e.event_date BETWEEN ? AND ?
@@ -85,7 +85,7 @@ if ($hasContractEvents) {
 
 /**
  * $bookings[date][timeslot] = row
- * - schedule wint van contract (handmatig override)
+ * schedule wint van contract
  */
 $bookings = [];
 foreach ($data as $row) {
@@ -127,7 +127,8 @@ $maandenVoluit = [
     12 => 'december',
 ];
 
-$timeslots = [
+// Standaard bloktijden – worden gebruikt als er geen handmatige tijd is
+$defaultTimes = [
     'OCHTEND' => '11:00 - 15:00',
     'MIDDAG'  => '15:00 - 19:00',
     'AVOND'   => '19:00 - 23:00',
@@ -260,7 +261,6 @@ grid-template-columns:repeat(7, minmax(0,1fr));
 gap:10px;
 }
 
-/* 1x per week, over de volle breedte */
 .weekrow{
 grid-column:1 / -1;
 padding:10px 12px;
@@ -342,7 +342,6 @@ a.slot.booked .val{
 color:rgba(255,255,255,.95);
 }
 
-/* contract subtiel */
 a.slot.contract{
 border-color:rgba(255,255,255,.16);
 background:rgba(0,0,0,.18);
@@ -453,21 +452,30 @@ a:visited{color:#ffe0c2}
                 <?php if ($isToday): ?><span class="todayBadge">Vandaag</span><?php endif; ?>
               </div>
 
-              <?php foreach ($timeslots as $ts => $slotLabel): ?>
-                  <?php
-                  $hasBooking = isset($bookings[$dateStr][$ts]);
+              <?php foreach ($defaultTimes as $ts => $defaultTimeLabel):
+                  $booking = $bookings[$dateStr][$ts] ?? null;
 
-                  if ($hasBooking) {
-                      $row = $bookings[$dateStr][$ts];
+                  // Bepaal de weer te geven tijd
+                  $timeDisplay = $defaultTimeLabel; // standaard bloktijd
 
-                      if (($row['src'] ?? '') === 'SCHEDULE') {
-                          $href  = "/admin/planning_edit.php?id=" . urlencode((string)$row['item_id']);
+                  if ($booking && $booking['src'] === 'SCHEDULE' && !empty($booking['start_time']) && !empty($booking['end_time'])) {
+                      // Er is een handmatige tijd ingesteld → toon deze
+                      $start = substr($booking['start_time'], 0, 5);
+                      $end   = substr($booking['end_time'], 0, 5);
+                      $timeDisplay = $start . ' – ' . $end;
+                  }
+
+                  // Bepaal link en visuele stijl
+                  if ($booking) {
+                      if ($booking['src'] === 'SCHEDULE') {
+                          $href  = "/admin/planning_edit.php?id=" . urlencode((string)$booking['item_id']);
                           $cls   = "slot booked";
-                          $label = (string)$row['band_name'];
+                          $label = (string)$booking['band_name'];
                       } else {
+                          // contract
                           $href  = "/admin/planning_edit.php?date=" . urlencode($dateStr) . "&timeslot=" . urlencode($ts);
                           $cls   = "slot booked contract";
-                          $label = (string)$row['band_name'] . " (contract)";
+                          $label = (string)$booking['band_name'] . " (contract)";
                       }
                   } else {
                       $href  = "/admin/planning_edit.php?date=" . urlencode($dateStr) . "&timeslot=" . urlencode($ts);
@@ -476,7 +484,7 @@ a:visited{color:#ffe0c2}
                   }
                   ?>
                   <a class="<?= h($cls) ?>" href="<?= h($href) ?>">
-                      <span class="ts"><?= h($slotLabel) ?></span>
+                      <span class="ts"><?= h($timeDisplay) ?></span>
                       <span class="val"><?= h($label) ?></span>
                   </a>
               <?php endforeach; ?>

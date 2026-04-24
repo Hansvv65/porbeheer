@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+/*
 $base = __DIR__ . '/lib/PHPMailer/src/';
 if (!is_file($base . 'PHPMailer.php')) {
     throw new RuntimeException('PHPMailer ontbreekt in app/lib/PHPMailer/src/');
@@ -9,6 +10,9 @@ require_once $base . 'Exception.php';
 require_once $base . 'PHPMailer.php';
 require_once $base . 'SMTP.php';
 
+*/
+
+require_once '/var/www/libs/porbeheer/app/bootstrap.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 

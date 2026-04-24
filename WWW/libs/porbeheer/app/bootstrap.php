@@ -1,12 +1,25 @@
 <?php
 declare(strict_types=1);
 
+
+
 // ====== BASIC HARDENING ======
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
 
-// /var/www/porbeheer/public/cgi-bin/app -> projectroot = /var/www/porbeheer/public
-define('PROJECT_ROOT', dirname(__DIR__, 2));
+// ====== DEFINE CONSTANTS (alleen als ze nog niet bestaan) ======
+if (!defined('PROJECT_ROOT')) {
+    define('PROJECT_ROOT', dirname(__DIR__));  // /var/www/libs/porbeheer
+}
+if (!defined('APP_ROOT')) {
+    define('APP_ROOT', __DIR__);                // /var/www/libs/porbeheer/app
+}
+if (!defined('VENDOR_ROOT')) {
+    define('VENDOR_ROOT', PROJECT_ROOT . '/vendor');
+}
+
+// ====== AUTOLOADER ======
+require_once APP_ROOT . '/autoload.php';
 
 // ====== GENERIC HTML ESCAPE ======
 if (!function_exists('h')) {
@@ -16,11 +29,10 @@ if (!function_exists('h')) {
     }
 }
 
-// ====== SIMPLE AUTOLOAD FOR LOCAL VENDOR LIBS ======
-require_once __DIR__ . '/autoload.php';
+
 
 // ====== CONFIG ======
-$configFile = __DIR__ . '/config.php';
+$configFile = APP_ROOT . '/config.php';
 if (!is_file($configFile)) {
     http_response_code(500);
     echo 'Config ontbreekt (app/config.php).';
@@ -33,6 +45,7 @@ if (!is_array($config)) {
     echo 'Config is ongeldig.';
     exit;
 }
+
 
 $GLOBALS['config'] = $config;
 

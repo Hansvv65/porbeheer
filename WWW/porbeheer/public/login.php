@@ -3,7 +3,25 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/mail.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/autoload.php';
+
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
+
+/**
+ * Bepaal het werkelijke IP-adres van de client (rekening houdend met proxies)
+ */
+function getClientIp(): string {
+    $headers = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
+    foreach ($headers as $header) {
+        if (!empty($_SERVER[$header])) {
+            $ips = explode(',', $_SERVER[$header]);
+            $ip = trim($ips[0]);
+            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                return $ip;
+            }
+        }
+    }
+    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+}
 
 if (isLoggedIn()) {
     header('Location: ' . (mustSetup2fa() ? '/admin/setup-2fa.php' : '/admin/dashboard.php'));
@@ -15,36 +33,122 @@ if (isset($_GET['cancel2fa'])) {
     exit;
 }
 
-$err=null; $info=null; $username='';
-if ($_SERVER['REQUEST_METHOD']==='POST') {
-    requireCsrf($_POST['csrf']??null);
-    $action=(string)($_POST['action']??'login');
-    if($action==='login'){
-        $username=trim((string)($_POST['username']??'')); $password=(string)($_POST['password']??'');
-        if($username===''||strlen($username)>80||strlen($password)>200){
-            $err='Controleer je gebruikersnaam en wachtwoord.';
-        }else{
-            $res=attemptPrimaryLogin($pdo,$username,$password);$code=(string)($res['code']??'');
-            if(!empty($res['ok'])){
-                auditLog($pdo,'LOGIN_PASSWORD_OK','auth/login',['username'=>$username,'user_id'=>$res['user_id']??null]);
-                header('Location: /admin/setup-2fa.php?welcome=1');exit;
+$err = null;
+$info = null;
+$username = '';
+$ip = getClientIp();          // IP-adres bepalen voor de hele sessie
+$timestamp = date('Y-m-d H:i:s');
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrf($_POST['csrf'] ?? null);
+    $action = (string)($_POST['action'] ?? 'login');
+
+    if ($action === 'login') {
+        $username = trim((string)($_POST['username'] ?? ''));
+        $password = (string)($_POST['password'] ?? '');
+        $logResult = '';
+        $userId = null;
+
+        // Validatie van invoer
+        if ($username === '' || strlen($username) > 80 || strlen($password) > 200) {
+            $err = 'Controleer je gebruikersnaam en wachtwoord.';
+            $logResult = 'validation_failed';
+            // Log de mislukte poging wegens validatiefout
+            auditLog($pdo, 'LOGIN_ATTEMPT', 'auth/login', [
+                'username'   => $username ?: '(leeg)',
+                'ip'         => $ip,
+                'timestamp'  => $timestamp,
+                'result'     => $logResult,
+                'reason'     => $err
+            ]);
+        } else {
+            $res = attemptPrimaryLogin($pdo, $username, $password);
+            $code = (string)($res['code'] ?? '');
+            $userId = $res['user_id'] ?? null;
+
+            if (!empty($res['ok'])) {
+                // Succesvolle wachtwoordcontrole
+                $logResult = 'success_needs_2fa';
+                auditLog($pdo, 'LOGIN_ATTEMPT', 'auth/login', [
+                    'username'   => $username,
+                    'user_id'    => $userId,
+                    'ip'         => $ip,
+                    'timestamp'  => $timestamp,
+                    'result'     => $logResult
+                ]);
+                header('Location: /admin/setup-2fa.php?welcome=1');
+                exit;
             }
-            if($code==='NEEDS_2FA'){
-                $info='Je wachtwoord is goed. Vul nu de 6‑cijferige code uit je authenticator‑app in.';
-            }elseif($code==='PENDING_EMAIL'){$err='Je e-mailadres is nog niet bevestigd.';}
-            elseif($code==='PENDING_APPROVAL'){$err='Je account wacht nog op goedkeuring.';}
-            elseif($code==='BLOCKED'){$err='Je account is geblokkeerd.';}
-            elseif($code==='LOCKED'&&!empty($res['locked_until'])){$err='Je account is vergrendeld tot '.(string)$res['locked_until'].'.';}
-            else{$err='Inloggen mislukt.';}
+
+            // Bepaal het resultaat voor de auditlog op basis van de foutcode
+            switch ($code) {
+                case 'NEEDS_2FA':
+                    $info = 'Je wachtwoord is goed. Vul nu de 6‑cijferige code uit je authenticator‑app in.';
+                    $logResult = 'password_ok_needs_2fa';
+                    break;
+                case 'PENDING_EMAIL':
+                    $err = 'Je e-mailadres is nog niet bevestigd.';
+                    $logResult = 'pending_email';
+                    break;
+                case 'PENDING_APPROVAL':
+                    $err = 'Je account wacht nog op goedkeuring.';
+                    $logResult = 'pending_approval';
+                    break;
+                case 'BLOCKED':
+                    $err = 'Je account is geblokkeerd.';
+                    $logResult = 'blocked';
+                    break;
+                case 'LOCKED':
+                    $lockedUntil = $res['locked_until'] ?? '';
+                    $err = 'Je account is vergrendeld tot ' . (string)$lockedUntil . '.';
+                    $logResult = 'locked';
+                    break;
+                default:
+                    $err = 'Inloggen mislukt.';
+                    $logResult = 'invalid_credentials';
+                    break;
+            }
+
+            // Log elke mislukte poging (inclusief de "NEEDS_2FA" telt als mislukt? Nee, die is deels succesvol, maar we loggen als apart resultaat)
+            auditLog($pdo, 'LOGIN_ATTEMPT', 'auth/login', [
+                'username'   => $username,
+                'user_id'    => $userId,
+                'ip'         => $ip,
+                'timestamp'  => $timestamp,
+                'result'     => $logResult,
+                'code'       => $code
+            ]);
         }
     }
-    if($action==='totp'){
-        $codeInput=trim((string)($_POST['totp_code']??''));$res=verifyPending2faCode($pdo,$codeInput);
-        if(!empty($res['ok'])){header('Location: /admin/dashboard.php');exit;}
-        $err='De ingevoerde code klopt niet. Probeer het opnieuw.';
+
+    if ($action === 'totp') {
+        $codeInput = trim((string)($_POST['totp_code'] ?? ''));
+        $res = verifyPending2faCode($pdo, $codeInput);
+        if (!empty($res['ok'])) {
+            // 2FA geslaagd – optioneel ook loggen (niet vereist volgens opdracht, maar voor compleetheid)
+            auditLog($pdo, 'LOGIN_2FA_OK', 'auth/login', [
+              'username' => $username,
+              'ip'       => $ip,
+              'user_id'  => $res['user_id'] ?? null,
+              'timestamp'=> $timestamp
+            ]);
+            header('Location: /admin/dashboard.php');
+            exit;
+        }
+        $err = 'De ingevoerde code klopt niet. Probeer het opnieuw.';
+        // Optioneel: mislukte 2FA poging loggen
+        auditLog($pdo, 'LOGIN_2FA_FAILED', 'auth/login', [
+            'username' => loadPending2faUser($pdo)['username'] ?? 'unknown',
+            'ip'       => $ip,
+            'timestamp'=> $timestamp,
+            'result'   => 'invalid_totp'
+        ]);
     }
 }
-$csrf=csrfToken();$pending2fa=hasPending2fa();$pendingUser=$pending2fa?loadPending2faUser($pdo):null;
+
+$csrf = csrfToken();
+$pending2fa = hasPending2fa();
+$pendingUser = $pending2fa ? loadPending2faUser($pdo) : null;
 ?>
 <!doctype html>
 <html lang="nl">
@@ -177,7 +281,7 @@ input:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0
 <div class="helpoverlay" id="helpbox">
   <div class="helpcard">
     <h3>Zo werkt het inloggen</h3>
-    <svg viewBox="0 0 64 64" fill="none" xmlns="[w3.org](http://www.w3.org/2000/svg)" aria-hidden="true">
+    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <rect x="16" y="8" width="32" height="48" rx="6" stroke="var(--info)" stroke-width="3" fill="none"/>
       <circle cx="32" cy="52" r="2" fill="var(--info)"/>
       <path d="M24 20h16v12H24z" stroke="var(--info)" stroke-width="2" fill="rgba(255,157,71,.15)"/>
