@@ -9,16 +9,55 @@ use BaconQrCode\Renderer\Color\Gray;
 
 final class Fill
 {
-    private static ?Fill $default = null;
+    /**
+     * @var ColorInterface
+     */
+    private $backgroundColor;
+
+    /**
+     * @var ColorInterface|null
+     */
+    private $foregroundColor;
+
+    /**
+     * @var Gradient|null
+     */
+    private $foregroundGradient;
+
+    /**
+     * @var EyeFill
+     */
+    private $topLeftEyeFill;
+
+    /**
+     * @var EyeFill
+     */
+    private $topRightEyeFill;
+
+    /**
+     * @var EyeFill
+     */
+    private $bottomLeftEyeFill;
+
+    /**
+     * @var self|null
+     */
+    private static $default;
 
     private function __construct(
-        private readonly ColorInterface  $backgroundColor,
-        private readonly ?ColorInterface $foregroundColor,
-        private readonly ?Gradient       $foregroundGradient,
-        private readonly EyeFill         $topLeftEyeFill,
-        private readonly EyeFill         $topRightEyeFill,
-        private readonly EyeFill $bottomLeftEyeFill
+        ColorInterface $backgroundColor,
+        ?ColorInterface $foregroundColor,
+        ?Gradient $foregroundGradient,
+        EyeFill $topLeftEyeFill,
+        EyeFill $topRightEyeFill,
+        EyeFill $bottomLeftEyeFill
     ) {
+        $this->backgroundColor = $backgroundColor;
+        $this->foregroundColor = $foregroundColor;
+        $this->foregroundGradient = $foregroundGradient;
+        $this->topLeftEyeFill = $topLeftEyeFill;
+        $this->topRightEyeFill = $topRightEyeFill;
+        $this->bottomLeftEyeFill = $bottomLeftEyeFill;
     }
 
     public static function default() : self

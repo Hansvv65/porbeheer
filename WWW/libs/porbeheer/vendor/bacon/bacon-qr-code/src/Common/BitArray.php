@@ -16,13 +16,21 @@ final class BitArray
      *
      * @var SplFixedArray<int>
      */
-    private SplFixedArray $bits;
+    private $bits;
+
+    /**
+     * Size of the bit array in bits.
+     *
+     * @var int
+     */
+    private $size;
 
     /**
      * Creates a new bit array with a given size.
      */
-    public function __construct(private int $size = 0)
+    public function __construct(int $size = 0)
     {
+        $this->size = $size;
         $this->bits = SplFixedArray::fromArray(array_fill(0, ($this->size + 31) >> 3, 0));
     }
 
@@ -99,7 +107,7 @@ final class BitArray
         }
 
         $result = ($bitsOffset << 5) + BitUtils::numberOfTrailingZeros($currentBits);
-        return min($result, $this->size);
+        return $result > $this->size ? $this->size : $result;
     }
 
     /**
@@ -125,7 +133,7 @@ final class BitArray
         }
 
         $result = ($bitsOffset << 5) + BitUtils::numberOfTrailingZeros($currentBits);
-        return min($result, $this->size);
+        return $result > $this->size ? $this->size : $result;
     }
 
     /**

@@ -16,59 +16,73 @@ final class ReedSolomonCodec
 {
     /**
      * Symbol size in bits.
+     *
+     * @var int
      */
-    private int $symbolSize;
+    private $symbolSize;
 
     /**
      * Block size in symbols.
+     *
+     * @var int
      */
-    private int $blockSize;
+    private $blockSize;
 
     /**
      * First root of RS code generator polynomial, index form.
+     *
+     * @var int
      */
-    private int $firstRoot;
+    private $firstRoot;
 
     /**
      * Primitive element to generate polynomial roots, index form.
+     *
+     * @var int
      */
-    private int $primitive;
+    private $primitive;
 
     /**
      * Prim-th root of 1, index form.
+     *
+     * @var int
      */
-    private int $iPrimitive;
+    private $iPrimitive;
 
     /**
      * RS code generator polynomial degree (number of roots).
+     *
+     * @var int
      */
-    private int $numRoots;
+    private $numRoots;
 
     /**
      * Padding bytes at front of shortened block.
+     *
+     * @var int
      */
-    private int $padding;
+    private $padding;
 
     /**
      * Log lookup table.
      *
      * @var SplFixedArray
      */
-    private SplFixedArray $alphaTo;
+    private $alphaTo;
 
     /**
      * Anti-Log lookup table.
      *
      * @var SplFixedArray
      */
-    private SplFixedArray $indexOf;
+    private $indexOf;
 
     /**
      * Generator polynomial.
      *
      * @var SplFixedArray
      */
-    private SplFixedArray $generatorPoly;
+    private $generatorPoly;
 
     /**
      * @throws InvalidArgumentException if symbol size ist not between 0 and 8
@@ -208,7 +222,7 @@ final class ReedSolomonCodec
     /**
      * Decodes received data.
      */
-    public function decode(SplFixedArray $data, ?SplFixedArray $erasures = null) : ?int
+    public function decode(SplFixedArray $data, SplFixedArray $erasures = null) : ?int
     {
         // This speeds up the initialization a bit.
         $numRootsPlusOne = SplFixedArray::fromArray(array_fill(0, $this->numRoots + 1, 0), false);

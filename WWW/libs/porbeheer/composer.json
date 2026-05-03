@@ -1,0 +1,8 @@
+{
+    "require": {
+        "bacon/bacon-qr-code": "^2.0",
+        "dompdf/dompdf": "^3.1",
+        "phpmailer/phpmailer": "^7.0",
+        "robthree/twofactorauth": "^3.0"
+    }
+}

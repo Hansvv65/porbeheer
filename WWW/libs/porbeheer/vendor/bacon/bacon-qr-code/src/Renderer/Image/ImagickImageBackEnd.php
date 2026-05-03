@@ -23,22 +23,40 @@ use ImagickPixel;
 
 final class ImagickImageBackEnd implements ImageBackEndInterface
 {
-    private string $imageFormat;
+    /**
+     * @var string
+     */
+    private $imageFormat;
 
-    private int $compressionQuality;
+    /**
+     * @var int
+     */
+    private $compressionQuality;
 
-    private ?Imagick $image;
+    /**
+     * @var Imagick|null
+     */
+    private $image;
 
-    private ?ImagickDraw $draw;
+    /**
+     * @var ImagickDraw|null
+     */
+    private $draw;
 
-    private ?int $gradientCount;
+    /**
+     * @var int|null
+     */
+    private $gradientCount;
 
     /**
      * @var TransformationMatrix[]|null
      */
-    private ?array $matrices;
+    private $matrices;
 
-    private ?int $matrixIndex;
+    /**
+     * @var int|null
+     */
+    private $matrixIndex;
 
     public function __construct(string $imageFormat = 'png', int $compressionQuality = 100)
     {

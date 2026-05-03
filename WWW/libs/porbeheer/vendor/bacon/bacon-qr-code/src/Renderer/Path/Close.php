@@ -5,7 +5,10 @@ namespace BaconQrCode\Renderer\Path;
 
 final class Close implements OperationInterface
 {
-    private static ?Close $instance = null;
+    /**
+     * @var self|null
+     */
+    private static $instance;
 
     private function __construct()
     {
@@ -20,14 +23,6 @@ final class Close implements OperationInterface
      * @return self
      */
     public function translate(float $x, float $y) : OperationInterface
-    {
-        return $this;
-    }
-
-    /**
-     * @return self
-     */
-    public function rotate(int $degrees) : OperationInterface
     {
         return $this;
     }

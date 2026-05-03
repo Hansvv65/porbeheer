@@ -70,25 +70,31 @@ final class CharacterSetEci extends AbstractEnum
     protected const EUC_KR = [[30], 'EUC-KR'];
 
     /**
+     * @var int[]
+     */
+    private $values;
+
+    /**
      * @var string[]
      */
-    private array $otherEncodingNames;
+    private $otherEncodingNames;
 
     /**
      * @var array<int, self>|null
      */
-    private static ?array $valueToEci;
+    private static $valueToEci;
 
     /**
      * @var array<string, self>|null
      */
-    private static ?array $nameToEci = null;
+    private static $nameToEci;
 
     /**
      * @param int[] $values
      */
-    public function __construct(private readonly array $values, string ...$otherEncodingNames)
+    public function __construct(array $values, string ...$otherEncodingNames)
     {
+        $this->values = $values;
         $this->otherEncodingNames = $otherEncodingNames;
     }
 

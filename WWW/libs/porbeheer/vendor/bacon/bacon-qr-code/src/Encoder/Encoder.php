@@ -20,15 +20,7 @@ final class Encoder
     /**
      * Default byte encoding.
      */
-    public const DEFAULT_BYTE_MODE_ENCODING = 'ISO-8859-1';
-
-    /** @deprecated use DEFAULT_BYTE_MODE_ENCODING */
-    public const DEFAULT_BYTE_MODE_ECODING = self::DEFAULT_BYTE_MODE_ENCODING;
-
-    /**
-     * Allowed characters for the Alphanumeric Mode.
-     */
-    private const ALPHANUMERIC_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:';
+    public const DEFAULT_BYTE_MODE_ECODING = 'ISO-8859-1';
 
     /**
      * The original table is defined in the table 5 of JISX0510:2004 (p.19).
@@ -47,7 +39,7 @@ final class Encoder
      *
      * @var array<string,ReedSolomonCodec>
      */
-    private static array $codecs = [];
+    private static $codecs = [];
 
     /**
      * Encodes "content" with the error correction level "ecLevel".
@@ -55,10 +47,8 @@ final class Encoder
     public static function encode(
         string $content,
         ErrorCorrectionLevel $ecLevel,
-        string $encoding = self::DEFAULT_BYTE_MODE_ENCODING,
-        ?Version $forcedVersion = null,
-        // Barcode scanner might not be able to read the encoded message of the QR code with the prefix ECI of UTF-8
-        bool $prefixEci = true
+        string $encoding = self::DEFAULT_BYTE_MODE_ECODING,
+        ?Version $forcedVersion = null
     ) : QrCode {
         // Pick an encoding mode appropriate for the content. Note that this
         // will not attempt to use multiple modes / segments even if that were
@@ -70,7 +60,7 @@ final class Encoder
         $headerBits = new BitArray();
 
         // Append ECI segment if applicable
-        if ($prefixEci && Mode::BYTE() === $mode && self::DEFAULT_BYTE_MODE_ENCODING !== $encoding) {
+        if (Mode::BYTE() === $mode && self::DEFAULT_BYTE_MODE_ECODING !== $encoding) {
             $eci = CharacterSetEci::getCharacterSetEciByName($encoding);
 
             if (null !== $eci) {
@@ -120,11 +110,7 @@ final class Encoder
         $headerAndDataBits->appendBitArray($headerBits);
 
         // Find "length" of main segment and write it.
-        $numLetters = match ($mode) {
-            Mode::BYTE()                          => $dataBits->getSizeInBytes(),
-            Mode::NUMERIC(), Mode::ALPHANUMERIC() => strlen($content),
-            Mode::KANJI()                         => iconv_strlen($content, 'utf-8'),
-        };
+        $numLetters = (Mode::BYTE() === $mode ? $dataBits->getSizeInBytes() : strlen($content));
         self::appendLengthInfo($numLetters, $version, $mode, $headerAndDataBits);
 
         // Put data together into the overall payload.
@@ -157,30 +143,44 @@ final class Encoder
     /**
      * Gets the alphanumeric code for a byte.
      */
-    private static function getAlphanumericCode(int $byte) : int
+    private static function getAlphanumericCode(int $code) : int
     {
-        return self::ALPHANUMERIC_TABLE[$byte] ?? -1;
+        if (isset(self::ALPHANUMERIC_TABLE[$code])) {
+            return self::ALPHANUMERIC_TABLE[$code];
+        }
+
+        return -1;
     }
 
     /**
      * Chooses the best mode for a given content.
      */
-    private static function chooseMode(string $content, ?string $encoding = null) : Mode
+    private static function chooseMode(string $content, string $encoding = null) : Mode
     {
-        if ('' === $content) {
-            return Mode::BYTE();
-        }
-
         if (null !== $encoding && 0 === strcasecmp($encoding, 'SHIFT-JIS')) {
             return self::isOnlyDoubleByteKanji($content) ? Mode::KANJI() : Mode::BYTE();
         }
 
-        if (ctype_digit($content)) {
-            return Mode::NUMERIC();
+        $hasNumeric = false;
+        $hasAlphanumeric = false;
+        $contentLength = strlen($content);
+
+        for ($i = 0; $i < $contentLength; ++$i) {
+            $char = $content[$i];
+
+            if (ctype_digit($char)) {
+                $hasNumeric = true;
+            } elseif (-1 !== self::getAlphanumericCode(ord($char))) {
+                $hasAlphanumeric = true;
+            } else {
+                return Mode::BYTE();
+            }
         }
 
-        if (self::isOnlyAlphanumeric($content)) {
+        if ($hasAlphanumeric) {
             return Mode::ALPHANUMERIC();
+        } elseif ($hasNumeric) {
+            return Mode::NUMERIC();
         }
 
         return Mode::BYTE();
@@ -200,7 +200,7 @@ final class Encoder
     }
 
     /**
-     * Checks if content only consists of double-byte kanji characters (or is empty).
+     * Checks if content only consists of double-byte kanji characters.
      */
     private static function isOnlyDoubleByteKanji(string $content) : bool
     {
@@ -217,7 +217,7 @@ final class Encoder
         }
 
         for ($i = 0; $i < $length; $i += 2) {
-            $byte = ord($bytes[$i]);
+            $byte = $bytes[$i] & 0xff;
 
             if (($byte < 0x81 || $byte > 0x9f) && $byte < 0xe0 || $byte > 0xeb) {
                 return false;
@@ -225,14 +225,6 @@ final class Encoder
         }
 
         return true;
-    }
-
-    /**
-     * Checks if content only consists of alphanumeric characters (or is empty).
-     */
-    private static function isOnlyAlphanumeric(string $content) : bool
-    {
-        return strlen($content) === strspn($content, self::ALPHANUMERIC_CHARS);
     }
 
     /**
@@ -460,7 +452,7 @@ final class Encoder
         $toEncode = new SplFixedArray($numDataBytes + $numEcBytesInBlock);
 
         for ($i = 0; $i < $numDataBytes; $i++) {
-            $toEncode[$i] = $dataBytes[$i];
+            $toEncode[$i] = $dataBytes[$i] & 0xff;
         }
 
         $ecBytes = new SplFixedArray($numEcBytesInBlock);
@@ -517,15 +509,31 @@ final class Encoder
 
     /**
      * Appends bytes to a bit array in a specific mode.
+     *
+     * @throws WriterException if an invalid mode was supplied
      */
     private static function appendBytes(string $content, Mode $mode, BitArray $bits, string $encoding) : void
     {
-        match ($mode) {
-            Mode::NUMERIC()      => self::appendNumericBytes($content, $bits),
-            Mode::ALPHANUMERIC() => self::appendAlphanumericBytes($content, $bits),
-            Mode::BYTE()         => self::append8BitBytes($content, $bits, $encoding),
-            Mode::KANJI()        => self::appendKanjiBytes($content, $bits),
-        };
+        switch ($mode) {
+            case Mode::NUMERIC():
+                self::appendNumericBytes($content, $bits);
+                break;
+
+            case Mode::ALPHANUMERIC():
+                self::appendAlphanumericBytes($content, $bits);
+                break;
+
+            case Mode::BYTE():
+                self::append8BitBytes($content, $bits, $encoding);
+                break;
+
+            case Mode::KANJI():
+                self::appendKanjiBytes($content, $bits);
+                break;
+
+            default:
+                throw new WriterException('Invalid mode: ' . $mode);
+        }
     }
 
     /**
@@ -621,23 +629,17 @@ final class Encoder
      */
     private static function appendKanjiBytes(string $content, BitArray $bits) : void
     {
-        $bytes = @iconv('utf-8', 'SHIFT-JIS', $content);
-
-        if (false === $bytes) {
-            throw new WriterException('Content could not be converted to SHIFT-JIS');
-        }
-
-        if (strlen($bytes) % 2 > 0) {
+        if (strlen($content) % 2 > 0) {
             // We just do a simple length check here. The for loop will check
             // individual characters.
             throw new WriterException('Content does not seem to be encoded in SHIFT-JIS');
         }
 
-        $length = strlen($bytes);
+        $length = strlen($content);
 
         for ($i = 0; $i < $length; $i += 2) {
-            $byte1 = ord($bytes[$i]);
-            $byte2 = ord($bytes[$i + 1]);
+            $byte1 = ord($content[$i]) & 0xff;
+            $byte2 = ord($content[$i + 1]) & 0xff;
             $code = ($byte1 << 8) | $byte2;
 
             if ($code >= 0x8140 && $code <= 0x9ffc) {

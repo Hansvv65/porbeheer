@@ -4,16 +4,15 @@ declare(strict_types=1);
 /* admin/tech-test.php - Technische testpagina voor controle van server, PHP, libraries en functies zoals DomPDF. */
 
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
-require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
-include __DIR__ . '/../assets/includes/header.php';
+require_once __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+use Dompdf\Dompdf;
+use Dompdf\Options;
+
+requireRole(['ADMIN', 'BEHEER']);
 
 // ===== AUDIT LOGGING FUNCTIE (indien niet al globaal aanwezig) =====
 if (!function_exists('auditLog')) {
-    /**
-     * Schrijf een entry naar de audit_log tabel.
-     */
     function auditLog(PDO $pdo, string $eventType, string $eventName, array $details = []): void
     {
         try {
@@ -54,7 +53,6 @@ if (!function_exists('auditLog')) {
                 $ua !== '' ? $ua : null,
             ]);
         } catch (Throwable $e) {
-            // audit logging mag de app nooit breken
             error_log('Audit log failed: ' . $e->getMessage());
         }
     }
@@ -83,7 +81,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'dompdf_test') {
     $user = currentUser();
     $username = $user['username'] ?? 'onbekend';
 
-    // Log start (nog voordat buffers gewist worden)
+    // Audit: start
     if ($pdo) {
         auditLog($pdo, 'TEST', 'dompdf_generate_start', [
             'username' => $username,
@@ -91,8 +89,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'dompdf_test') {
         ]);
     }
 
-    if (!class_exists('Dompdf\Dompdf')) {
-        $errorMsg = 'DomPDF is niet beschikbaar.';
+    if (!class_exists(Dompdf::class)) {
+        $errorMsg = 'DomPDF is niet beschikbaar. Controleer of dompdf/dompdf via Composer is geïnstalleerd.';
         if ($pdo) {
             auditLog($pdo, 'TEST_FAIL', 'dompdf_class_missing', [
                 'error' => $errorMsg,
@@ -104,13 +102,14 @@ if (isset($_GET['action']) && $_GET['action'] === 'dompdf_test') {
         exit;
     }
 
+    // HTML voor de test-PDF (gebruikt standaard PDF-font Helvetica)
     $html = '<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>DomPDF Test</title>
     <style>
-        body { font-family: DejaVu Sans, sans-serif; margin: 2cm; }
+        body { font-family: Helvetica, sans-serif; margin: 2cm; }
         h1 { color: #1e3a8a; }
         p { line-height: 1.5; }
         .footer { margin-top: 2cm; font-size: 10pt; color: #666; }
@@ -125,25 +124,21 @@ if (isset($_GET['action']) && $_GET['action'] === 'dompdf_test') {
 </html>';
 
     try {
-        $dompdf = new Dompdf\Dompdf();
+        // === Werkende DomPDF‑configuratie uit de kleine test ===
+        $options = new Options();
+        // Gebruik een standaard PDF-lettertype (core font) – geen externe bestanden nodig
+        $options->set('defaultFont', 'Helvetica');
+        $options->set('isHtml5ParserEnabled', true);
+        // Geen fontDir, fontCache of tempDir instellen → voorkomt "Path cannot be empty"
+
+        $dompdf = new Dompdf($options);
         $dompdf->loadHtml($html);
         $dompdf->setPaper('A4', 'portrait');
         $dompdf->render();
 
         $output = $dompdf->output();
-
         if (strpos($output, '%PDF-') !== 0) {
-            $errorMsg = 'DomPDF genereerde geen geldige PDF.';
-            if ($pdo) {
-                auditLog($pdo, 'TEST_FAIL', 'dompdf_invalid_output', [
-                    'error' => $errorMsg,
-                    'output_preview' => substr($output, 0, 200),
-                    'username' => $username
-                ]);
-            }
-            http_response_code(500);
-            echo $errorMsg;
-            exit;
+            throw new Exception('DomPDF genereerde geen geldige PDF.');
         }
 
         $duration = round((microtime(true) - $startTime) * 1000, 2);
@@ -155,12 +150,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'dompdf_test') {
             ]);
         }
 
-        // ===== VERWIJDER ALLE OUTPUTBUFFERS (inclusief de bannerbuffer) =====
+        // Verwijder alle outputbuffers (o.a. de header/footer van de admin layout)
         while (ob_get_level() > 0) {
             ob_end_clean();
         }
 
-        // Verstuur de correcte headers en de pure PDF
+        // Stuur de PDF naar de browser
         header('Content-Type: application/pdf');
         header('Content-Disposition: inline; filename="dompdf-test.pdf"');
         header('Content-Length: ' . strlen($output));
@@ -187,7 +182,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'dompdf_test') {
 // ===== VERDER MET DE NORMALE TECH-TEST PAGINA =====
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
-
 $config = $GLOBALS['config'] ?? [];
 
 function yesNo(bool $v): string
@@ -212,7 +206,6 @@ function formatTimeout(int $seconds): string
 {
     $minutes = floor($seconds / 60);
     $remainingSeconds = $seconds % 60;
-    
     if ($minutes > 0) {
         return $minutes . ' minuut' . ($minutes !== 1 ? 'en' : '') . ($remainingSeconds > 0 ? ' en ' . $remainingSeconds . ' seconden' : '');
     }
@@ -234,16 +227,12 @@ $sessionName  = session_name();
 $sessionTimeout = $config['security']['session_idle_timeout'] ?? 300;
 $isDevelopmentEnv = ($sessionTimeout === 1200);
 
-$vendorRoot   = realpath(__DIR__ . '/../cgi-bin/vendor') ?: (__DIR__ . '/../cgi-bin/vendor');
-$appRoot      = realpath(__DIR__ . '/../cgi-bin/app') ?: (__DIR__ . '/../cgi-bin/app');
-$publicRoot   = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
-
 $robthreeOk   = class_exists(\RobThree\Auth\TwoFactorAuth::class);
 $baconOk      = class_exists(\BaconQrCode\Writer::class);
 $daspridOk    = class_exists(\DASPRiD\Enum\AbstractEnum::class);
 $imagickOk    = extension_loaded('imagick');
 $pdoOk        = isset($pdo) && $pdo instanceof PDO;
-$dompdfOk     = class_exists(\Dompdf\Dompdf::class);
+$dompdfOk     = class_exists(Dompdf::class);
 
 $mailHost     = (string)($config['mail']['smtp_host'] ?? '');
 $mailUser     = (string)($config['mail']['smtp_user'] ?? '');
@@ -383,7 +372,6 @@ $tests = [
     }
     .ok{ color:#166534; font-weight:700; }
     .no{ color:#991b1b; font-weight:700; }
-    .warning{ color:#d97706; font-weight:700; }
     .pill{
       display:inline-block;
       padding:4px 10px;
@@ -462,9 +450,6 @@ $tests = [
         <div>SAPI</div><div><?= h($sapi) ?></div>
         <div>Server software</div><div><?= h($serverSoft) ?></div>
         <div>Document root</div><div><?= h($docRoot) ?></div>
-        <div>Public root</div><div class="small"><?= h($publicRoot) ?></div>
-        <div>App root</div><div class="small"><?= h($appRoot) ?></div>
-        <div>Vendor root</div><div class="small"><?= h($vendorRoot) ?></div>
       </div>
     </div>
 

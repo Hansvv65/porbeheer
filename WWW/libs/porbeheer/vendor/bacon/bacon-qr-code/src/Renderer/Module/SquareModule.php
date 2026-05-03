@@ -12,7 +12,10 @@ use BaconQrCode\Renderer\Path\Path;
  */
 final class SquareModule implements ModuleInterface
 {
-    private static ?SquareModule $instance = null;
+    /**
+     * @var self|null
+     */
+    private static $instance;
 
     private function __construct()
     {

@@ -1,7 +1,19 @@
 <?php
 declare(strict_types=1);
 
-
+/*
+ * bootstrap.php - Initialisatie van de Porbeheer applicatie
+ * - Voert basis hardening uit door error display uit te schakelen
+ * - Definieert essentiële constanten zoals PROJECT_ROOT, APP_ROOT, VENDOR_ROOT
+ * - Laadt de autoloader voor het automatisch includen van klassen en libraries
+ * - Biedt een generieke HTML escape functie 'h' voor veilige output
+ * - Laadt en valideert de configuratie vanuit app/config.php
+ * - Detecteert de omgeving (production, demo, development) op basis van hostnaam en configuratie
+ * - Definieert helper functies voor het verkrijgen van app URL, versie en het injecteren van een omgevingsbanner in niet-productie omgevingen
+ * - Stelt de standaard timezone in op basis van configuratie
+ * - Initialiseert een PDO database connectie met foutafhandeling
+ * - Laadt auth helpers en start een veilige sessie
+ */
 
 // ====== BASIC HARDENING ======
 ini_set('display_errors', '0');
@@ -19,7 +31,7 @@ if (!defined('VENDOR_ROOT')) {
 }
 
 // ====== AUTOLOADER ======
-require_once APP_ROOT . '/autoload.php';
+require_once VENDOR_ROOT . '/autoload.php';
 
 // ====== GENERIC HTML ESCAPE ======
 if (!function_exists('h')) {

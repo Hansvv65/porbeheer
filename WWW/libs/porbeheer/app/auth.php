@@ -472,48 +472,32 @@ function buildTwoFactorAuth(): \RobThree\Auth\TwoFactorAuth
         return $tfa;
     }
 
-    $projectRoot = defined('PROJECT_ROOT') ? PROJECT_ROOT : dirname(__DIR__);
-    $vendorAutoload = $projectRoot . '/vendor/autoload.php';
-    $qrProvider = $projectRoot . '/vendor/Qr/QrSvgProvider.php';
+    // Anonieme SVG QR-provider die voldoet aan de IQRCodeProvider-interface
+    $qrProvider = new class implements \RobThree\Auth\Providers\Qr\IQRCodeProvider {
+        public function getQRCodeImage(string $qrtext, int $size = 200): string
+        {
+            if (!class_exists('BaconQrCode\Renderer\Image\SvgImageBackEnd')) {
+                throw new \RuntimeException('BaconQrCode SVG backend ontbreekt');
+            }
 
-    if (!is_file($vendorAutoload)) {
-        throw new RuntimeException('Composer autoload ontbreekt op: ' . $vendorAutoload);
-    }
-    
-    require_once $vendorAutoload;
-    
-    if (!class_exists('\\App\\Qr\\QrSvgProvider') && is_file($qrProvider)) {
-        require_once $qrProvider;
-    }
-    
-    if (!class_exists('\\App\\Qr\\QrSvgProvider')) {
-        throw new RuntimeException('QrSvgProvider niet gevonden op: ' . $qrProvider);
-    }
+            $renderer = new \BaconQrCode\Renderer\ImageRenderer(
+                new \BaconQrCode\Renderer\RendererStyle\RendererStyle($size, 0),
+                new \BaconQrCode\Renderer\Image\SvgImageBackEnd()
+            );
 
-    // Bepaal de juiste manier om de library te instantieren
-    try {
-        // Probeer de nieuwe manier met enum (PHP 8.1+)
-        if (enum_exists('RobThree\Auth\Algorithm')) {
-            $tfa = new \RobThree\Auth\TwoFactorAuth(
-                issuer: 'Porbeheer',
-                qrcodeprovider: new \App\Qr\QrSvgProvider()
-            );
-        } 
-        // Probeer de oude manier met string
-        else {
-            $tfa = new \RobThree\Auth\TwoFactorAuth(
-                'Porbeheer',
-                new \App\Qr\QrSvgProvider()
-            );
+            $writer = new \BaconQrCode\Writer($renderer);
+            return $writer->writeString($qrtext);
         }
-    } catch (Throwable $e) {
-        // Fallback: probeer met alleen issuer
-        $tfa = new \RobThree\Auth\TwoFactorAuth('Porbeheer');
-    }
-    
+
+        public function getMimeType(): string
+        {
+            return 'image/svg+xml';
+        }
+    };
+
+    $tfa = new \RobThree\Auth\TwoFactorAuth($qrProvider, 'Porbeheer');
     return $tfa;
 }
-
 
 function attemptPrimaryLogin(PDO $pdo, string $username, string $password): array
 {

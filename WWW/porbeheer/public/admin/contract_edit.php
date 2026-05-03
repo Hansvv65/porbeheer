@@ -1,6 +1,17 @@
 <?php
 declare(strict_types=1);
 
+/*
+ * contract_edit.php
+ *   - Pagina voor het bekijken, aanmaken en bewerken van sleutelcontracten
+ *   - Toegang alleen voor ADMIN en BEHEER
+ *   - Ondersteunt PDF-generatie via Dompdf
+ *   - AJAX endpoints voor dynamische data (lockers, contacten, PDF ophalen)
+ *   - Contractgegevens worden opgeslagen in de key_contracts tabel, inclusief blob voor PDF
+ *   - Biedt zowel dropdown selectie van bestaande bands als een vrij veld voor custom bandnaam
+ *   - Logt belangrijke acties in auditlog
+ */
+
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 requireRole(['ADMIN','BEHEER']);
@@ -91,12 +102,7 @@ if (isset($_GET['action'])) {
 // ---------- PAGINA OPBOUW ----------
 include __DIR__ . '/../assets/includes/header.php';
 
-// DomPDF laden
-$dompdfAutoloader = __DIR__ . '/../../../libs/porbeheer/vendor/dompdf/dompdf/src/Autoloader.php';
-if (file_exists($dompdfAutoloader)) {
-    require_once $dompdfAutoloader;
-    Dompdf\Autoloader::register();
-}
+// Dompdf wordt geladen via de Composer autoloader (geen handmatige register meer nodig)
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
@@ -111,21 +117,7 @@ function h($v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 }
 
-// Database kolommen voor BLOB (veilig aanmaken)
-function addColumnIfNotExists(PDO $pdo, string $table, string $column, string $definition): void {
-    $stmt = $pdo->prepare("SHOW COLUMNS FROM `$table` LIKE ?");
-    $stmt->execute([$column]);
-    if (!$stmt->fetch()) {
-        $pdo->exec("ALTER TABLE `$table` ADD COLUMN `$column` $definition");
-    }
-}
-try {
-    addColumnIfNotExists($pdo, 'key_contracts', 'contract_pdf', 'LONGBLOB NULL');
-    addColumnIfNotExists($pdo, 'key_contracts', 'contract_pdf_name', 'VARCHAR(255) NULL');
-    addColumnIfNotExists($pdo, 'key_contracts', 'contract_pdf_mime', "VARCHAR(100) NULL DEFAULT 'application/pdf'");
-} catch (Throwable $e) {
-    error_log("Fout bij aanmaken contract BLOB kolommen: " . $e->getMessage());
-}
+// Database kolommen zijn handmatig toegevoegd, dus geen ALTER TABLE meer
 
 $errors = [];
 $msg = null;
@@ -177,7 +169,10 @@ if ($existingContract) {
     }
 }
 
-// ---------- PDF generatie functie (compact, max 2 pag) ----------
+// Haal alle bands op voor de dropdown
+$bands = $pdo->query("SELECT id, name FROM bands WHERE deleted_at IS NULL ORDER BY name")->fetchAll();
+
+// ---------- PDF generatie functie (AANGEPAST: gebruikt standaard PDF-font Helvetica) ----------
 function generateContractPDF(
     string $bandName,
     string $bandContactName,
@@ -196,7 +191,7 @@ function generateContractPDF(
     <meta charset="UTF-8">
     <title>Sleutelcontract ' . htmlspecialchars($keyCode) . '</title>
     <style>
-        body { font-family: DejaVu Sans, sans-serif; margin: 1.5cm 1.5cm; line-height: 1.25; color: #1e293b; font-size: 11pt; }
+        body { font-family: Helvetica, sans-serif; margin: 1.5cm 1.5cm; line-height: 1.25; color: #1e293b; font-size: 11pt; }
         h1 { text-align: center; color: #1e3a8a; margin-bottom: 12px; font-size: 20px; }
         h2 { font-size: 13pt; margin-top: 12px; margin-bottom: 4px; color: #1e3a8a; border-bottom: 1px solid #ccc; padding-bottom: 3px; }
         .header { text-align: center; margin-bottom: 16px; }
@@ -286,8 +281,11 @@ function generateContractPDF(
 </html>';
     try {
         $options = new Options();
-        $options->set('defaultFont', 'DejaVu Sans');
+        // Gebruik een standaard PDF-lettertype (core font) – geen externe bestanden nodig
+        $options->set('defaultFont', 'Helvetica');
         $options->set('isHtml5ParserEnabled', true);
+        // Geen fontDir, fontCache of tempDir instellen → voorkomt "Path cannot be empty"
+
         $dompdf = new Dompdf($options);
         $dompdf->loadHtml($html);
         $dompdf->setPaper('A4', 'portrait');
@@ -310,23 +308,26 @@ if (isset($_GET['preview_pdf'])) {
         $lockerId = (int)($_GET['locker_id'] ?? 0);
         $customBandName = trim($_GET['custom_band_name'] ?? '');
 
-        // Gebruik bandnaam uit locker indien aanwezig
+        // Bepaal bandnaam: eerst uit de geselecteerde band (via dropdown), anders de custom naam
+        $bandIdFromDropdown = (int)($_GET['band_id_dropdown'] ?? 0);
         $bandName = '';
+        if ($bandIdFromDropdown > 0) {
+            $stmt = $pdo->prepare("SELECT name FROM bands WHERE id = ?");
+            $stmt->execute([$bandIdFromDropdown]);
+            $band = $stmt->fetch();
+            if ($band) $bandName = $band['name'];
+        }
+        if (empty($bandName) && !empty($customBandName)) {
+            $bandName = $customBandName;
+        }
+        if (empty($bandName)) $bandName = 'Human Kind';
+
         $lockerNo = 'n.v.t.';
         if ($lockerId > 0) {
-            $stmt = $pdo->prepare("SELECT l.locker_no, b.name as band_name FROM lockers l LEFT JOIN bands b ON b.id = l.band_id WHERE l.id = ?");
+            $stmt = $pdo->prepare("SELECT locker_no FROM lockers WHERE id = ?");
             $stmt->execute([$lockerId]);
             $info = $stmt->fetch();
-            if ($info) {
-                $lockerNo = $info['locker_no'] ?? 'n.v.t.';
-                if (!empty($info['band_name'])) {
-                    $bandName = $info['band_name'];
-                }
-            }
-        }
-        // Fallback: custom naam of Human Kind
-        if (empty($bandName)) {
-            $bandName = $customBandName ?: 'Human Kind';
+            if ($info) $lockerNo = $info['locker_no'] ?? 'n.v.t.';
         }
 
         $bandContactName = ''; $bandContactEmail = '';
@@ -362,7 +363,7 @@ if (isset($_GET['preview_pdf'])) {
     }
 }
 
-// ---------- save_contract (met BLOB) ----------
+// ---------- save_contract ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_contract'])) {
     try {
         requireCsrf($_POST['csrf'] ?? '');
@@ -372,16 +373,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_contract'])) {
         $startDate = trim($_POST['start_date'] ?? date('Y-m-d'));
         $endDate = trim($_POST['end_date'] ?? date('Y-m-d', strtotime('+1 year')));
         $lockerId = (int)($_POST['locker_id'] ?? 0);
+        
+        // Verwerk band/organisatie
+        $bandOption = $_POST['band_option'] ?? 'custom';
+        $bandId = (int)($_POST['band_id_dropdown'] ?? 0);
         $customBandName = trim($_POST['custom_band_name'] ?? '');
-
-        // Verwerk bandnaam volgens regels
-        if ($hasBand) {
-            // Gebruik bandnaam uit locker
-            $customBandName = $currentBandName;
+        
+        if ($bandOption === 'dropdown' && $bandId > 0) {
+            // Kies een bestaande band
+            $stmt = $pdo->prepare("SELECT name FROM bands WHERE id = ?");
+            $stmt->execute([$bandId]);
+            $band = $stmt->fetch();
+            $finalBandName = $band ? $band['name'] : 'Human Kind';
         } else {
-            if (empty($customBandName)) {
-                $customBandName = 'Human Kind';
-            }
+            // Vrij veld: gebruik custom_band_name, default 'Human Kind'
+            $finalBandName = $customBandName !== '' ? $customBandName : 'Human Kind';
         }
 
         if ($bandContactId <= 0) throw new Exception('Selecteer een contactpersoon');
@@ -397,7 +403,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_contract'])) {
         }
 
         $lockerNo = $currentLockerNo ?? '';
-        $bandName = $customBandName;
 
         $contactStmt = $pdo->prepare("SELECT name, email FROM contacts WHERE id = ?");
         $contactStmt->execute([$bandContactId]);
@@ -420,7 +425,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_contract'])) {
             'locker_no' => $lockerNo,
             'key_code' => $row['key_code'],
             'key_description' => $row['description'],
-            'custom_band_name' => $customBandName
+            'custom_band_name' => $finalBandName,
+            'band_option' => $bandOption,
+            'band_id' => $bandId
         ]);
 
         $checkStmt = $pdo->prepare("SELECT id FROM key_contracts WHERE key_id = ?");
@@ -449,6 +456,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_contract'])) {
 }
 
 $title = 'Sleutelcontract: ' . h($row['key_code']);
+// Bepaal de huidige waarde voor het bandveld (voor weergave in het formulier)
+$currentBandDropdownValue = 0;
+$currentCustomBandValue = $contractCustomBandName ?: 'Human Kind';
+// Als er een contract is, bekijk of het uit een bestaande band komt
+if ($existingContract && isset($existingContract['contract_data'])) {
+    $data = json_decode($existingContract['contract_data'], true);
+    if ($data && isset($data['band_id']) && $data['band_id'] > 0) {
+        $currentBandDropdownValue = (int)$data['band_id'];
+        $currentCustomBandValue = $data['custom_band_name'] ?? '';
+    } elseif ($data && !empty($data['custom_band_name'])) {
+        $currentCustomBandValue = $data['custom_band_name'];
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="nl">
@@ -514,7 +534,6 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
     <?php if (isset($_GET['msg']) && $_GET['msg'] === 'saved') $msg = 'Contract opgeslagen!'; ?>
     <?php if ($msg): ?><div class="msg success"><?= h($msg) ?></div><?php endif; ?>
 
-    <!-- PANEEL: Contractgegevens -->
     <div class="card">
         <h2>📜 Contract voor sleutel <?= h($row['key_code']) ?></h2>
         <form method="post" enctype="multipart/form-data" id="contractForm">
@@ -523,21 +542,32 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
             <input type="hidden" name="locker_id" id="contract_locker_id" value="<?= h($row['locker_id'] ?? '') ?>">
 
             <div class="row">
-                <?php if ($hasBand): ?>
-                    <!-- Gekoppelde band: readonly weergave -->
-                    <div class="field">
-                        <label>Band / Organisatie</label>
+                <div class="field">
+                    <label>Band / Organisatie</label>
+                    <?php if ($hasBand): ?>
+                        <!-- Als de sleutel aan een vaste band is gekoppeld, toon readonly -->
                         <input type="text" value="<?= h($currentBandName) ?>" readonly>
-                    </div>
-                <?php else: ?>
-                    <!-- Geen band: invulveld met default Human Kind -->
-                    <div class="field">
-                        <label>Band / Organisatie</label>
-                        <input type="text" name="custom_band_name" id="custom_band_name"
-                               value="<?= h($contractCustomBandName ?: 'Human Kind') ?>"
-                               placeholder="Bijv. Human Kind">
-                    </div>
-                <?php endif; ?>
+                        <input type="hidden" name="band_option" value="dropdown">
+                        <input type="hidden" name="band_id_dropdown" value="<?= (int)$currentBandId ?>">
+                    <?php else: ?>
+                        <!-- Keuze tussen dropdown of vrij veld -->
+                        <select name="band_option" id="band_option" onchange="toggleBandInput()">
+                            <option value="dropdown" <?= ($currentBandDropdownValue > 0 ? 'selected' : '') ?>>Kies een bestaande band</option>
+                            <option value="custom" <?= ($currentBandDropdownValue == 0 && $currentCustomBandValue !== '' ? 'selected' : '') ?>>Andere (vrij invullen)</option>
+                        </select>
+                        <div id="band_dropdown_div" style="margin-top:8px; <?= ($currentBandDropdownValue > 0 ? '' : 'display:none;') ?>">
+                            <select name="band_id_dropdown" id="band_id_dropdown" style="width:100%">
+                                <option value="">-- Selecteer band --</option>
+                                <?php foreach ($bands as $band): ?>
+                                    <option value="<?= $band['id'] ?>" <?= ($currentBandDropdownValue == $band['id'] ? 'selected' : '') ?>><?= h($band['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div id="band_custom_div" style="margin-top:8px; <?= ($currentBandDropdownValue > 0 ? 'display:none;' : '') ?>">
+                            <input type="text" name="custom_band_name" id="custom_band_name" value="<?= h($currentCustomBandValue) ?>" placeholder="Bijv. Human Kind">
+                        </div>
+                    <?php endif; ?>
+                </div>
                 <div class="field">
                     <label>Kast</label>
                     <input type="text" id="contract_locker_no" value="<?= h($currentLockerNo ?: 'n.v.t.') ?>" readonly>
@@ -601,6 +631,19 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
 </div></div>
 
 <script>
+function toggleBandInput() {
+    const option = document.getElementById('band_option').value;
+    const dropdownDiv = document.getElementById('band_dropdown_div');
+    const customDiv = document.getElementById('band_custom_div');
+    if (option === 'dropdown') {
+        dropdownDiv.style.display = 'block';
+        customDiv.style.display = 'none';
+    } else {
+        dropdownDiv.style.display = 'none';
+        customDiv.style.display = 'block';
+    }
+}
+
 let allContacts = [];
 fetch('/admin/contract_edit.php?action=get_all_contacts').then(r=>r.json()).then(d=>{allContacts=d; updateContractContacts();}).catch(console.error);
 
@@ -623,9 +666,23 @@ window.generateContractPDF = function() {
     const start = document.querySelector('input[name="start_date"]')?.value;
     const end = document.querySelector('input[name="end_date"]')?.value;
     const lockerId = document.getElementById('contract_locker_id')?.value;
-    // Gebruik custom band naam veld als het bestaat, anders de bandnaam uit PHP
-    const customBandInput = document.getElementById('custom_band_name');
-    const customBand = customBandInput ? customBandInput.value : <?= json_encode($currentBandName ?: 'Human Kind') ?>;
+    
+    // Bepaal bandnaam
+    let bandName = '';
+    const bandOption = document.getElementById('band_option');
+    if (bandOption && bandOption.value === 'dropdown') {
+        const bandSelect = document.getElementById('band_id_dropdown');
+        const selectedBandId = bandSelect ? bandSelect.value : 0;
+        if (selectedBandId && selectedBandId > 0) {
+            // Zoek de bandnaam in de opties
+            const selectedOption = bandSelect.options[bandSelect.selectedIndex];
+            bandName = selectedOption ? selectedOption.text : '';
+        }
+    } else {
+        const customBandInput = document.getElementById('custom_band_name');
+        bandName = customBandInput ? customBandInput.value : '';
+    }
+    if (!bandName) bandName = 'Human Kind';
 
     if (!bandContact) { alert('Selecteer een contactpersoon.'); return; }
     if (!boardMember) { alert('Selecteer een bestuurslid.'); return; }
@@ -633,7 +690,13 @@ window.generateContractPDF = function() {
 
     let url = `/admin/contract_edit.php?id=<?= $id ?>&preview_pdf=1&band_contact_id=${encodeURIComponent(bandContact)}&board_member_id=${encodeURIComponent(boardMember)}&location=${encodeURIComponent(location)}&start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}`;
     if (lockerId) url += `&locker_id=${encodeURIComponent(lockerId)}`;
-    if (customBand) url += `&custom_band_name=${encodeURIComponent(customBand)}`;
+    url += `&custom_band_name=${encodeURIComponent(bandName)}`;
+    // Ook de dropdown band ID meesturen als die gekozen is
+    const bandOptionVal = document.getElementById('band_option') ? document.getElementById('band_option').value : 'custom';
+    if (bandOptionVal === 'dropdown') {
+        const bandId = document.getElementById('band_id_dropdown') ? document.getElementById('band_id_dropdown').value : 0;
+        if (bandId > 0) url += `&band_id_dropdown=${encodeURIComponent(bandId)}`;
+    }
     window.open(url, '_blank', 'width=800,height=600,toolbar=yes,scrollbars=yes');
 };
 

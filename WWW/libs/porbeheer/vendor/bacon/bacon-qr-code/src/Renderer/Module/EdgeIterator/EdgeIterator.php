@@ -15,13 +15,22 @@ final class EdgeIterator implements IteratorAggregate
     /**
      * @var int[]
      */
-    private array $bytes = [];
+    private $bytes = [];
 
-    private ?int $size;
+    /**
+     * @var int
+     */
+    private $size;
 
-    private int $width;
+    /**
+     * @var int
+     */
+    private $width;
 
-    private int $height;
+    /**
+     * @var int
+     */
+    private $height;
 
     public function __construct(ByteMatrix $matrix)
     {
