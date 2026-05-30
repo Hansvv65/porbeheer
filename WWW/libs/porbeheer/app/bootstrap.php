@@ -13,6 +13,7 @@ declare(strict_types=1);
  * - Stelt de standaard timezone in op basis van configuratie
  * - Initialiseert een PDO database connectie met foutafhandeling
  * - Laadt auth helpers en start een veilige sessie
+ * - Controleert na inloggen of het verplichte profiel (voornaam, achternaam, 06) is ingevuld
  */
 
 // ====== BASIC HARDENING ======
@@ -302,3 +303,30 @@ require_once __DIR__ . '/auth.php';
 
 // Start session veilig
 startSecureSession();
+
+// ==================== NIEUW: VERPLICHTE PROFIELCHECK ====================
+// Alleen als de gebruiker is ingelogd, 2FA al is ingesteld (of niet nodig),
+// en de huidige pagina niet de profielpagina of uitlogpagina is.
+if (function_exists('isLoggedIn') && isLoggedIn()) {
+    // mustSetup2fa() bestaat meestal in auth.php; we checken of die er is
+    if (!function_exists('mustSetup2fa') || !mustSetup2fa()) {
+        $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+
+        if (!in_array($requestUri, ['/admin/profile.php', '/logout.php'], true)) {
+            // Haal de actuele status en profielvelden uit de database
+            $stmt = $pdo->prepare("SELECT status, first_name, last_name, phone FROM users WHERE id = ?");
+            $stmt->execute([$_SESSION['user']['id']]);
+            $dbUser = $stmt->fetch();
+
+            if ($dbUser && $dbUser['status'] === 'ACTIVE') {
+                // Verplichte velden: voornaam, achternaam en 06-nummer
+                if (empty($dbUser['first_name']) || empty($dbUser['last_name']) || empty($dbUser['phone'])) {
+                    // Update sessie met de nieuwste DB-gegevens
+                    $_SESSION['user'] = array_merge($_SESSION['user'] ?? [], $dbUser);
+                    header('Location: /admin/profile.php');
+                    exit;
+                }
+            }
+        }
+    }
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -11,6 +12,8 @@ from zoneinfo import ZoneInfo
 
 import mysql.connector
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from db_config import DB_CONFIG
 
@@ -25,6 +28,7 @@ MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-tiny").strip() or "mistral-tiny"
 REQUEST_TIMEOUT_SECONDS = 45
 MAX_ASSETS = 9
+MAX_RETRIES = 3
 
 os.environ["TZ"] = APP_TIMEZONE
 try:
@@ -152,6 +156,8 @@ def create_ai_advice_table() -> None:
                 currency VARCHAR(20),
                 advice TEXT,
                 evaluation TEXT,
+                action VARCHAR(10) DEFAULT NULL,
+                confidence_score INT DEFAULT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """
@@ -172,16 +178,21 @@ def get_active_assets() -> List[Dict]:
         cursor = conn.cursor(dictionary=True)
 
         query = f"""
-            SELECT a.symbol, a.display_name, a.asset_type, a.exchange_name, a.currency
-            FROM asset_universe a
-            WHERE a.status = 'active'
+            SELECT b.symbol,
+                   COALESCE(u.display_name, b.symbol) AS display_name,
+                   COALESCE(u.asset_type, b.asset_type) AS asset_type,
+                   u.exchange_name,
+                   u.currency
+            FROM bot_symbols b
+            LEFT JOIN asset_universe u ON u.symbol = b.symbol
+            WHERE b.is_active = 1
               AND NOT EXISTS (
                   SELECT 1
                   FROM positions p
-                  WHERE p.symbol = a.symbol
+                  WHERE p.symbol = b.symbol
                     AND p.status = 'OPEN'
               )
-            ORDER BY a.symbol
+            ORDER BY b.priority_order ASC, b.symbol ASC
             LIMIT {int(MAX_ASSETS)}
         """
 
@@ -222,9 +233,41 @@ def get_recent_news(symbol: str) -> List[Dict]:
             conn.close()
 
 
-def call_mistral(prompt: str) -> str:
+def get_latest_snapshot(symbol: str) -> Optional[Dict]:
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """SELECT trend_state, trend_score, rsi_14, price
+               FROM asset_snapshots
+               WHERE symbol = %s
+               ORDER BY snapshot_time DESC
+               LIMIT 1""",
+            (symbol,)
+        )
+        return cursor.fetchone()
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None and conn.is_connected():
+            conn.close()
+
+
+def call_mistral(prompt: str, retries: int = MAX_RETRIES) -> str:
     if not MISTRAL_API_KEY:
         raise RuntimeError("MISTRAL_API_KEY ontbreekt")
+
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=retries,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["POST"]
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
 
     headers = {
         "Content-Type": "application/json",
@@ -236,7 +279,7 @@ def call_mistral(prompt: str) -> str:
         "messages": [{"role": "user", "content": prompt}],
     }
 
-    response = requests.post(
+    response = session.post(
         MISTRAL_API_URL,
         headers=headers,
         json=data,
@@ -248,7 +291,7 @@ def call_mistral(prompt: str) -> str:
     return str(result["choices"][0]["message"]["content"]).strip()
 
 
-def get_ai_advice(symbol: str, asset_info: Dict, news_items: List[Dict]) -> str:
+def get_ai_advice(symbol: str, asset_info: Dict, news_items: List[Dict], snapshot: Optional[Dict]) -> str:
     news_summary = (
         "\n- ".join(
             [f"{item.get('title', '')} ({item.get('sentiment_label') or 'UNKNOWN'})" for item in news_items]
@@ -256,6 +299,15 @@ def get_ai_advice(symbol: str, asset_info: Dict, news_items: List[Dict]) -> str:
         if news_items
         else "No recent news found."
     )
+
+    tech_info = ""
+    if snapshot:
+        tech_info = f"""
+Technische data (laatste 5m):
+- prijs: {snapshot['price']}
+- trend: {snapshot['trend_state']} (score {snapshot['trend_score']})
+- RSI14: {snapshot['rsi_14']}
+"""
 
     prompt = f"""
 Geef een advies (koop, niet kopen, in de gaten houden) voor aandeel {symbol}.
@@ -266,6 +318,7 @@ Asset informatie:
 - beurs: {asset_info.get('exchange_name')}
 - valuta: {asset_info.get('currency')}
 
+{tech_info}
 Relevant nieuws:
 - {news_summary}
 
@@ -275,24 +328,44 @@ Geef een kort, duidelijk advies met motivatie in het Nederlands.
     return call_mistral(prompt)
 
 
-def evaluate_ai_advice(symbol: str, advice: str) -> str:
+def evaluate_ai_advice(symbol: str, advice: str) -> Dict:
     prompt = f"""
 Beoordeel het volgende advies voor aandeel {symbol}:
 
 \"\"\"{advice}\"\"\"
 
-Geef:
-1. een gewogen beslissing: koop / niet kopen / in de gaten houden
-2. een betrouwbaarheidsscore van 0-100
-3. een korte motivatie
+Geef een JSON‑object terug met de volgende keys:
+- "action": "BUY", "HOLD" of "SELL"
+- "confidence": een getal tussen 0 en 100
+- "reason": een korte motivatie in het Nederlands
 
-Antwoord in het Nederlands.
+Alleen het JSON‑object, geen extra tekst.
 """.strip()
 
-    return call_mistral(prompt)
+    raw = call_mistral(prompt)
+    # Parseer JSON uit het antwoord
+    try:
+        # Sommige modellen stoppen de JSON in ```json blokken
+        if "```" in raw:
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        result = json.loads(raw)
+        return {
+            "action": result.get("action", "HOLD").upper(),
+            "confidence_score": int(result.get("confidence", 50)),
+            "evaluation": result.get("reason", "")
+        }
+    except Exception:
+        # Fallback: tekst naar kolommen, zet actie op HOLD
+        return {
+            "action": "HOLD",
+            "confidence_score": 50,
+            "evaluation": raw[:1000]
+        }
 
 
-def save_advice_to_db(symbol: str, asset_info: Dict, advice: str, evaluation: str) -> None:
+def save_advice_to_db(symbol: str, asset_info: Dict, advice: str, evaluation: str, action: str, confidence: int) -> None:
     conn = None
     cursor = None
     try:
@@ -301,8 +374,8 @@ def save_advice_to_db(symbol: str, asset_info: Dict, advice: str, evaluation: st
 
         query = """
             INSERT INTO ai_advice
-            (symbol, display_name, asset_type, exchange_name, currency, advice, evaluation, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+            (symbol, display_name, asset_type, exchange_name, currency, advice, evaluation, action, confidence_score, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
         """
 
         cursor.execute(
@@ -315,6 +388,8 @@ def save_advice_to_db(symbol: str, asset_info: Dict, advice: str, evaluation: st
                 asset_info.get("currency"),
                 advice,
                 evaluation,
+                action,
+                confidence,
             ),
         )
 
@@ -344,17 +419,18 @@ def process_asset(asset: Dict) -> dict:
         log_bot("INFO", f"symbol={symbol} status=START")
 
         news = get_recent_news(symbol)
-        advice = get_ai_advice(symbol, asset, news)
-        evaluation = evaluate_ai_advice(symbol, advice)
-        save_advice_to_db(symbol, asset, advice, evaluation)
+        snapshot = get_latest_snapshot(symbol)
+        advice = get_ai_advice(symbol, asset, news, snapshot)
+        eval_data = evaluate_ai_advice(symbol, advice)
+        save_advice_to_db(symbol, asset, advice, eval_data["evaluation"], eval_data["action"], eval_data["confidence_score"])
 
         result["status"] = "OK"
         result["outcome"] = "SAVED"
-        result["message"] = f"news_items={len(news)}"
+        result["message"] = f"news_items={len(news)} action={eval_data['action']} confidence={eval_data['confidence_score']}"
 
         log_bot(
             "INFO",
-            f"symbol={symbol} status=OK outcome=SAVED news_items={len(news)}"
+            f"symbol={symbol} status=OK outcome=SAVED action={eval_data['action']} confidence={eval_data['confidence_score']}"
         )
         return result
 

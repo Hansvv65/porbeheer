@@ -1,13 +1,12 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
+require_once __DIR__ . '/../../libs/porbeheer/app/mail.php';
+require_once __DIR__ . '/../../libs/porbeheer/app/auth.php';
 
 
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
-/**
- * Bepaal het werkelijke IP-adres van de client (rekening houdend met proxies)
- */
 function getClientIp(): string {
     $headers = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
     foreach ($headers as $header) {
@@ -34,42 +33,132 @@ if (isset($_GET['cancel2fa'])) {
 
 $err = null;
 $info = null;
-$username = '';
-$ip = getClientIp();          // IP-adres bepalen voor de hele sessie
+$email = '';
+$ip = getClientIp();
 $timestamp = date('Y-m-d H:i:s');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf($_POST['csrf'] ?? null);
     $action = (string)($_POST['action'] ?? 'login');
 
+    // ---- verificatiemail opnieuw verzenden (robuust) ----
+    if ($action === 'resend_verification') {
+        $lastResend = $_SESSION['last_resend_verification'] ?? 0;
+        if (time() - $lastResend < 120) {
+            $err = "Je kunt maximaal één keer per 2 minuten een verificatiemail aanvragen. Probeer het later opnieuw.";
+        } elseif (empty($_SESSION['pending_verify_email'])) {
+            $err = "Geen e-mailadres beschikbaar. Probeer opnieuw in te loggen.";
+        } else {
+            $pendingEmail = $_SESSION['pending_verify_email'];
+            $stmt = $pdo->prepare("SELECT id, username, email FROM users WHERE email = ? AND email_verified_at IS NULL");
+            $stmt->execute([$pendingEmail]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$user) {
+                $err = "Geen niet-bevestigde gebruiker gevonden met dit e-mailadres.";
+                unset($_SESSION['pending_verify_email']);
+                auditLog($pdo, 'RESEND_VERIFICATION_USER_NOT_FOUND', 'auth/login', [
+                    'email' => $pendingEmail,
+                    'ip'    => $ip,
+                    'timestamp' => $timestamp
+                ]);
+            } else {
+                // Token aanmaken en hashed opslaan
+                $token = bin2hex(random_bytes(32));
+                $expires = date('Y-m-d H:i:s', strtotime('+24 hours'));
+                $hashedToken = password_hash($token, PASSWORD_DEFAULT);
+
+                // Update database – we committen deze ALTIJD (geen rollback op mailprobleem)
+                try {
+                    $update = $pdo->prepare("UPDATE users SET verification_token = ?, verification_expires = ?, updated_at = NOW() WHERE id = ?");
+                    $update->execute([$hashedToken, $expires, $user['id']]);
+                } catch (PDOException $e) {
+                    $err = "Er is een databasefout opgetreden. Probeer het later opnieuw.";
+                    auditLog($pdo, 'RESEND_VERIFICATION_DB_ERROR', 'auth/login', [
+                        'email'   => $user['email'],
+                        'user_id' => $user['id'],
+                        'ip'      => $ip,
+                        'timestamp' => $timestamp,
+                        'error'   => $e->getMessage()
+                    ]);
+                    // stop hier – geen mail sturen met een ongeldige token
+                    // we tonen de fout en gaan niet verder
+                    goto end_resend; // we springen naar het label om de rest over te slaan
+                }
+
+                // Link opbouwen
+                $verifyLink = appUrl("/verify.php?email=" . urlencode($user['email']) . "&token=" . $token);
+                $subject = "Bevestig je e-mailadres voor Porbeheer";
+                $htmlBody = "
+                <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+                    <h2>Bevestig je e-mailadres</h2>
+                    <p>Beste " . htmlspecialchars($user['username']) . ",</p>
+                    <p>Klik op de onderstaande link om je e-mailadres te bevestigen en je account te activeren:</p>
+                    <p><a href='" . htmlspecialchars($verifyLink) . "' style='display: inline-block; padding: 10px 20px; background-color: #bf721f; color: #fff; text-decoration: none; border-radius: 5px;'>Bevestig nu</a></p>
+                    <p>Of kopieer deze link in je browser:<br>" . htmlspecialchars($verifyLink) . "</p>
+                    <p>Deze link is <strong>24 uur geldig</strong>.</p>
+                    <p>Met vriendelijke groet,<br>Porbeheer</p>
+                </div>";
+                $textBody = "Beste " . $user['username'] . ",\n\n"
+                          . "Klik op de volgende link om je e-mailadres te bevestigen:\n"
+                          . $verifyLink . "\n\n"
+                          . "Deze link is 24 uur geldig.\n\n"
+                          . "Met vriendelijke groet,\nPorbeheer";
+
+                // Verstuur e-mail
+                $mailSent = sendMail($user['email'], $subject, $htmlBody, $textBody);
+
+                if ($mailSent) {
+                    $_SESSION['last_resend_verification'] = time();
+                    $info = "Er is een nieuwe bevestigingsmail verzonden naar " . h($user['email']) . ". Check je inbox (ook spam).";
+                    auditLog($pdo, 'RESEND_VERIFICATION_OK', 'auth/login', [
+                        'email'   => $user['email'],
+                        'user_id' => $user['id'],
+                        'ip'      => $ip,
+                        'timestamp' => $timestamp
+                    ]);
+                } else {
+                    // Mailfunctie gaf false terug, maar token is al opgeslagen en geldig
+                    $info = "Bevestigingsmail naar " . h($user['email']) . " kon niet onmiddellijk worden verzonden, maar de link is al actief. Controleer je spamfolder of vraag de mail later opnieuw aan. (Technische foutmelding bij verzenden, neem contact op met beheerder indien nodig.)";
+                    auditLog($pdo, 'RESEND_VERIFICATION_MAIL_WARNING', 'auth/login', [
+                        'email'   => $user['email'],
+                        'user_id' => $user['id'],
+                        'ip'      => $ip,
+                        'timestamp' => $timestamp,
+                        'note'    => 'sendMail returned false'
+                    ]);
+                }
+            }
+        }
+        end_resend: // label om DB-fout af te handelen zonder de rest van de code te storen
+    }
+    // ---- einde resend ----
+
     if ($action === 'login') {
-        $username = trim((string)($_POST['username'] ?? ''));
+        $email = strtolower(trim((string)($_POST['email'] ?? '')));
         $password = (string)($_POST['password'] ?? '');
         $logResult = '';
         $userId = null;
 
-        // Validatie van invoer
-        if ($username === '' || strlen($username) > 80 || strlen($password) > 200) {
-            $err = 'Controleer je gebruikersnaam en wachtwoord.';
+        if ($email === '' || strlen($email) > 80 || strlen($password) > 200) {
+            $err = 'Controleer je e‑mailadres en wachtwoord.';
             $logResult = 'validation_failed';
-            // Log de mislukte poging wegens validatiefout
             auditLog($pdo, 'LOGIN_ATTEMPT', 'auth/login', [
-                'username'   => $username ?: '(leeg)',
+                'email'      => $email ?: '(leeg)',
                 'ip'         => $ip,
                 'timestamp'  => $timestamp,
                 'result'     => $logResult,
                 'reason'     => $err
             ]);
         } else {
-            $res = attemptPrimaryLogin($pdo, $username, $password);
+            $res = attemptPrimaryLogin($pdo, $email, $password);
             $code = (string)($res['code'] ?? '');
             $userId = $res['user_id'] ?? null;
 
             if (!empty($res['ok'])) {
-                // Succesvolle wachtwoordcontrole
                 $logResult = 'success_needs_2fa';
                 auditLog($pdo, 'LOGIN_ATTEMPT', 'auth/login', [
-                    'username'   => $username,
+                    'email'      => $email,
                     'user_id'    => $userId,
                     'ip'         => $ip,
                     'timestamp'  => $timestamp,
@@ -79,15 +168,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            // Bepaal het resultaat voor de auditlog op basis van de foutcode
             switch ($code) {
                 case 'NEEDS_2FA':
                     $info = 'Je wachtwoord is goed. Vul nu de 6‑cijferige code uit je authenticator‑app in.';
                     $logResult = 'password_ok_needs_2fa';
                     break;
                 case 'PENDING_EMAIL':
-                    $err = 'Je e-mailadres is nog niet bevestigd.';
+                    $err = 'Je e‑mailadres is nog niet bevestigd.';
                     $logResult = 'pending_email';
+                    $_SESSION['pending_verify_email'] = $email;
                     break;
                 case 'PENDING_APPROVAL':
                     $err = 'Je account wacht nog op goedkeuring.';
@@ -108,9 +197,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     break;
             }
 
-            // Log elke mislukte poging (inclusief de "NEEDS_2FA" telt als mislukt? Nee, die is deels succesvol, maar we loggen als apart resultaat)
             auditLog($pdo, 'LOGIN_ATTEMPT', 'auth/login', [
-                'username'   => $username,
+                'email'      => $email,
                 'user_id'    => $userId,
                 'ip'         => $ip,
                 'timestamp'  => $timestamp,
@@ -124,19 +212,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $codeInput = trim((string)($_POST['totp_code'] ?? ''));
         $res = verifyPending2faCode($pdo, $codeInput);
         if (!empty($res['ok'])) {
-            // 2FA geslaagd – optioneel ook loggen (niet vereist volgens opdracht, maar voor compleetheid)
             auditLog($pdo, 'LOGIN_2FA_OK', 'auth/login', [
-              'username' => $username,
-              'ip'       => $ip,
-              'user_id'  => $res['user_id'] ?? null,
-              'timestamp'=> $timestamp
+                'email'      => $email,
+                'ip'         => $ip,
+                'user_id'    => $res['user_id'] ?? null,
+                'timestamp'  => $timestamp
             ]);
             header('Location: /admin/dashboard.php');
             exit;
         }
         $err = 'De ingevoerde code klopt niet. Probeer het opnieuw.';
-        // Optioneel: mislukte 2FA poging loggen
         auditLog($pdo, 'LOGIN_2FA_FAILED', 'auth/login', [
+            'email'    => $email,
             'username' => loadPending2faUser($pdo)['username'] ?? 'unknown',
             'ip'       => $ip,
             'timestamp'=> $timestamp,
@@ -151,7 +238,6 @@ $pendingUser = $pending2fa ? loadPending2faUser($pdo) : null;
 ?>
 <!doctype html>
 <html lang="nl">
-
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - Inloggen</title>
@@ -209,10 +295,6 @@ input:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0
   background:linear-gradient(180deg,var(--glass),var(--glass2));
   padding:24px;text-align:center;box-shadow:var(--shadow);
 }
-.helpcard h3{margin-top:0;margin-bottom:12px;color:var(--info);}
-.helpcard p{text-align:left;line-height:1.5;margin:10px 0;}
-.helpcard ul{text-align:left;padding-left:20px;margin:15px 0;}
-.helpcard li{margin-bottom:8px;color:var(--muted);}
 .helpcard h3{margin-top:0;margin-bottom:16px;color:var(--info);font-size:1.4rem;}
 .helpcard p{text-align:left;line-height:1.6;margin:12px 0;font-size:0.95rem;}
 .helpcard ul{text-align:left;padding-left:22px;margin:18px 0;list-style-type: none;}
@@ -243,8 +325,8 @@ input:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0
       <form method="post" autocomplete="off">
         <input type="hidden" name="csrf" value="<?=h($csrf)?>">
         <input type="hidden" name="action" value="login">
-        <label>Gebruikersnaam
-          <input name="username" required autocomplete="username" value="<?=h($username)?>" placeholder="e.g. jansen01">
+        <label>E‑mail
+          <input name="email" type="email" required autocomplete="email" value="<?=h($email)?>" placeholder="jouw@email.nl">
         </label>
         <label>Wachtwoord
           <input name="password" type="password" required autocomplete="current-password" placeholder="••••••••">
@@ -258,10 +340,19 @@ input:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0
           <span>© Porbeheer</span>
         </div>
       </form>
+
+      <!-- knop om verificatiemail opnieuw te sturen bij fout 'nog niet bevestigd' -->
+      <?php if($err === 'Je e‑mailadres is nog niet bevestigd.' && !empty($_SESSION['pending_verify_email'])): ?>
+      <form method="post" style="margin-top: 10px;">
+        <input type="hidden" name="csrf" value="<?=h($csrf)?>">
+        <input type="hidden" name="action" value="resend_verification">
+        <button type="submit" class="btn" style="background-color: var(--info); margin-top: 0;">Bevestigingsmail opnieuw verzenden</button>
+      </form>
+      <?php endif; ?>
+
       <?php else:?>
       <h2>Stap 2 van 2: 2FA‑code</h2>
       <div class="sub">Hallo, <?=h((string)($pendingUser['username']??''))?>!</div>
-      <!-- bestaande telefoon‑SVG behouden -->
       <form method="post" autocomplete="off">
         <input type="hidden" name="csrf" value="<?=h($csrf)?>">
         <input type="hidden" name="action" value="totp">
@@ -276,7 +367,6 @@ input:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0
   </div>
 </div>
 
-<!-- help-overlay -->
 <div class="helpoverlay" id="helpbox">
   <div class="helpcard">
     <h3>Zo werkt het inloggen</h3>
@@ -287,7 +377,7 @@ input:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0
     </svg>
     <p>Om de veiligheid te waarborgen gebruiken we Twee-Factor Authenticatie (2FA).</p>
     <ul>
-      <li><strong>Stap 1:</strong> Log in met je gebruikersnaam en wachtwoord.</li>
+      <li><strong>Stap 1:</strong> Log in met je e‑mailadres en wachtwoord.</li>
       <li><strong>Stap 2:</strong> Open je Authenticator app (Google, Microsoft of 2FAS).</li>
       <li><strong>Stap 3:</strong> Typ de 6-cijferige code over in het portaal.</li>
       <li><strong>Nieuw?</strong> Na je eerste login word je begeleid bij het instellen van de app.</li>

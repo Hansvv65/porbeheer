@@ -6,15 +6,6 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 
 requireLogin();
 
-// Vervang de eigen QrSvgProvider door de Composer-gebaseerde provider
-use RobThree\Auth\TwoFactorAuth;
-use RobThree\Auth\Providers\Qr\BaconQrCodeProvider;
-
-function h(?string $v): string
-{
-    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-}
-
 $user = currentUser();
 $userId = (int)($user['id'] ?? 0);
 
@@ -23,9 +14,8 @@ if ($userId <= 0) {
     exit('Geen ingelogde gebruiker.');
 }
 
-// Maak een TwoFactorAuth instantie met de BaconQrCodeProvider
-$qrProvider = new BaconQrCodeProvider();
-$tfa = new TwoFactorAuth($qrProvider, 'Porbeheer');
+// Gebruik de veilige, lokale SVG‑QR‑generator uit auth.php
+$tfa = buildTwoFactorAuth();
 
 $message = '';
 $messageType = 'info';
