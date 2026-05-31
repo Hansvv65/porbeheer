@@ -9,7 +9,6 @@ import re
 import time
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 from email.utils import parsedate_to_datetime
@@ -210,9 +209,14 @@ def classify_market_relevance(symbol: str, title: str, summary: str) -> str:
 
 def classify_sentiment(title: str, summary: str) -> tuple[Optional[float], Optional[str]]:
     haystack = f"{title} {summary}".lower()
-    pos_words = ["beat", "strong", "gain", "growth", "upgrade", "record", "surge", "profit"]
-    neg_words = ["miss", "weak", "drop", "loss", "downgrade", "lawsuit", "probe", "warning"]
-
+    pos_words = [
+        "beat", "strong", "gain", "growth", "upgrade", "record", "surge", "profit",
+        "positive", "outperform", "buy", "bullish", "rally", "high", "rise", "uptrend"
+    ]
+    neg_words = [
+        "miss", "weak", "drop", "loss", "downgrade", "lawsuit", "probe", "warning",
+        "negative", "underperform", "sell", "bearish", "fall", "low", "decline", "downturn"
+    ]
     pos_hits = sum(1 for w in pos_words if w in haystack)
     neg_hits = sum(1 for w in neg_words if w in haystack)
 
@@ -275,6 +279,10 @@ def fetch_google_news(symbol: str, display_name: Optional[str], asset_type: str)
     url = f"https://news.google.com/rss/search?q={query.replace(' ', '%20')}&hl=en-US&gl=US&ceid=US:en"
     feed = feedparser.parse(url)
 
+    if feed.bozo and not feed.entries:
+        log_bot("WARNING", f"symbol={symbol} bozo_error feed leeg of ongeldig", db_log=False)
+        return []
+
     items: list[dict] = []
 
     for entry in feed.entries[:MAX_ITEMS_PER_ASSET]:
@@ -291,6 +299,9 @@ def fetch_google_news(symbol: str, display_name: Optional[str], asset_type: str)
             source_name = str(entry.source.get("title") or "Google News")
 
         sentiment_score, sentiment_label = classify_sentiment(title, summary)
+
+        # Debug logging (nu binnen de loop)
+        log_bot("DEBUG", f"symbol={symbol} title='{title[:80]}' sentiment={sentiment_label} score={sentiment_score}", level="DEBUG", db_log=False)
 
         published_at = (
             published.astimezone(ZoneInfo(APP_TIMEZONE)).strftime("%Y-%m-%d %H:%M:%S")

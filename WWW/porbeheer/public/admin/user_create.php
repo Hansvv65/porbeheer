@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
+require_once __DIR__ . '/../../../libs/porbeheer/app/mail.php';
 include __DIR__ . '/../assets/includes/header.php';
 
 requireRole(['ADMIN']);
@@ -11,14 +12,14 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
 
-
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
 $errors = [];
 $success = null;
 
-$allowedRoles = ['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER'];
-$priority = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'ADMIN'=>4];
+$allowedRoles = ['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID'];
+$priority = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'BESTUURSLID'=>4,'ADMIN'=>5];
+$titleOptions = ['', 'Dhr.', 'Mevr.', 'Dr.', 'Prof.'];
 
 function primaryRoleFrom(array $roles, array $priority): string {
   $p = 'GEBRUIKER';
@@ -26,20 +27,49 @@ function primaryRoleFrom(array $roles, array $priority): string {
   return $p;
 }
 
+function generateUniqueUsername(PDO $pdo, string $email): string {
+    // Gebruik het deel vóór de @ als basis
+    $base = explode('@', $email)[0];
+    // Alleen alfanumeriek en underscore, maximaal 50 tekens
+    $base = preg_replace('/[^a-zA-Z0-9_]/', '_', $base);
+    $base = substr($base, 0, 45);
+    
+    $username = $base;
+    $counter = 1;
+    while (true) {
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ? LIMIT 1");
+        $stmt->execute([$username]);
+        if (!$stmt->fetch()) {
+            return $username;
+        }
+        $username = $base . '_' . $counter;
+        $counter++;
+        if (strlen($username) > 50) {
+            // Uiterste valt terug op unieke hash
+            $username = substr($base, 0, 30) . '_' . bin2hex(random_bytes(8));
+        }
+    }
+}
+
 $csrf = csrfToken();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   requireCsrf($_POST['csrf'] ?? '');
 
-  $username = trim((string)($_POST['username'] ?? ''));
   $email    = trim((string)($_POST['email'] ?? ''));
   $password = (string)($_POST['password'] ?? '');
+
+  // Nieuwe profielvelden
+  $title        = trim((string)($_POST['title'] ?? ''));
+  $first_name   = trim((string)($_POST['first_name'] ?? ''));
+  $tussenvoegsel= trim((string)($_POST['tussenvoegsel'] ?? ''));
+  $last_name    = trim((string)($_POST['last_name'] ?? ''));
+  $phone        = trim((string)($_POST['phone'] ?? ''));
 
   $roles = $_POST['roles'] ?? [];
   if (!is_array($roles)) $roles = [];
   $roles = array_values(array_unique(array_filter($roles, fn($r) => in_array($r, $allowedRoles, true))));
 
-  if ($username === '' || mb_strlen($username) < 3) $errors[] = 'Gebruikersnaam minimaal 3 tekens.';
   if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Ongeldig e-mailadres.';
   if ($password === '' || mb_strlen($password) < 10) $errors[] = 'Wachtwoord minimaal 10 tekens.';
   if (!$roles) $errors[] = 'Kies minimaal 1 rol.';
@@ -48,15 +78,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
       $pdo->beginTransaction();
 
+      // Genereer een unieke gebruikersnaam op basis van e-mail
+      $username = generateUniqueUsername($pdo, $email);
+      
       $hash = password_hash($password, PASSWORD_DEFAULT);
       $primary = primaryRoleFrom($roles, $priority);
 
-      $stmt = $pdo->prepare("
-      INSERT INTO users (username, email, password_hash, role, status, active, created_at, approved_at, email_verified_at, updated_at)
-      VALUES (?, ?, ?, ?, 'ACTIVE', 1, NOW(), NOW(), NOW(), NOW())
-    ");
+      // Genereer verificatietoken
+      $verificationToken = bin2hex(random_bytes(32));
+      $verificationExpires = date('Y-m-d H:i:s', strtotime('+24 hours'));
+      $hashedToken = password_hash($verificationToken, PASSWORD_DEFAULT);
 
-      $stmt->execute([$username, $email, $hash, $primary]);
+      $stmt = $pdo->prepare("
+        INSERT INTO users 
+        (username, email, password_hash, role, status, active, created_at, approved_at, 
+         title, first_name, tussenvoegsel, last_name, phone,
+         verification_token, verification_expires, email_verified_at)
+        VALUES (?, ?, ?, ?, 'ACTIVE', 1, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, NULL)
+      ");
+      $stmt->execute([
+        $username, $email, $hash, $primary,
+        $title ?: null, $first_name ?: null, $tussenvoegsel ?: null, $last_name ?: null, $phone ?: null,
+        $hashedToken, $verificationExpires
+      ]);
 
       $userId = (int)$pdo->lastInsertId();
 
@@ -65,31 +109,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $pdo->commit();
 
+      // Verstuur verificatiemail (gebruik voornaam of e-mail als aanhef)
+      $greeting = $first_name ?: $email;
+      $verifyLink = appUrl("/verify.php?email=" . urlencode($email) . "&token=" . $verificationToken);
+      $html = "
+        <div style='font-family:Arial; max-width:600px;'>
+          <h2>Welkom bij Porbeheer</h2>
+          <p>Beste " . h($greeting) . ",</p>
+          <p>Je account is aangemaakt. Klik op onderstaande link om je e‑mailadres te bevestigen:</p>
+          <p><a href='$verifyLink' style='display:inline-block;padding:10px 20px; background:#bf721f; color:#fff; text-decoration:none; border-radius:5px;'>Bevestig e‑mail</a></p>
+          <p>Of kopieer: $verifyLink</p>
+          <p>De link is 24 uur geldig.</p>
+          <p>Met vriendelijke groet,<br>Porbeheer</p>
+        </div>";
+      sendEmail($email, 'Bevestig je e‑mailadres voor Porbeheer', $html);
+
       auditLog($pdo, 'USER_CREATE', 'admin/user_create.php', [
-        'id'=>$userId,
-        'username'=>$username,
-        'email'=>$email,
-        'primary'=>$primary,
-        'roles'=>implode(',', $roles)
+        'id'=>$userId, 'username'=>$username, 'email'=>$email, 'primary'=>$primary, 'roles'=>implode(',', $roles)
       ]);
 
-      // PRG: redirect voorkomt dubbel aanmaken bij refresh
       header('Location: /admin/users_detail.php?id=' . $userId . '&created=1');
       exit;
 
     } catch (Throwable $e) {
       if ($pdo->inTransaction()) $pdo->rollBack();
-      $errors[] = 'Aanmaken mislukt (bestaat username/e-mail al?)';
+      $errors[] = 'Aanmaken mislukt (e-mailadres mogelijk al in gebruik).';
       auditLog($pdo, 'USER_CREATE_FAIL', 'admin/user_create.php', [
-        'username'=>$username,
-        'email'=>$email
+        'email'=>$email, 'error'=>$e->getMessage()
       ]);
     }
   }
 }
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
-
 ?>
 <!DOCTYPE html>
 <html lang="nl">
@@ -101,7 +153,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
   :root{
     --text:#fff; --muted:rgba(255,255,255,.78);
     --border:rgba(255,255,255,.22);
-    --glass:rgba(255,255,255,.12); --glass2:rgba(255,255,255,.06);
+    --glass:rgba(255,255,255,.12);
     --shadow:0 14px 40px rgba(0,0,0,.45);
     --ok:#7CFFB2; --err:#FF8DA1; --accent:#ffd86b;
   }
@@ -119,14 +171,12 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     display:flex; justify-content:center;
   }
   .wrap{ width:min(980px, 96vw); }
-
   .topbar{
     display:flex; align-items:flex-end; justify-content:space-between;
     gap:16px; flex-wrap:wrap; margin-bottom:14px;
   }
-  .brand h1{ margin:0; font-size:28px; letter-spacing:.5px; }
+  .brand h1{ margin:0; font-size:28px; }
   .brand .sub{ margin-top:6px; color:var(--muted); font-size:14px; }
-
   .userbox{
     background:var(--glass);
     border:1px solid var(--border);
@@ -134,13 +184,11 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     padding:12px 14px;
     box-shadow:var(--shadow);
     backdrop-filter:blur(10px);
-    -webkit-backdrop-filter:blur(10px);
     min-width:260px;
   }
   .userbox .line1{font-weight:bold}
   .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
-
-  a{ color:#fff; }
+  a{ color:#fff; text-decoration:none; }
   a:visited{ color:var(--accent); }
   a:hover{ opacity:.95; }
 
@@ -151,12 +199,11 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
     box-shadow:var(--shadow);
     backdrop-filter:blur(12px);
-    -webkit-backdrop-filter:blur(12px);
     padding:18px;
   }
 
   label{ display:block; margin-top:10px; font-weight:800; }
-  input[type="text"], input[type="password"]{
+  input[type="text"], input[type="password"], input[type="email"], select{
     width:100%;
     padding:10px 12px;
     margin-top:6px;
@@ -165,6 +212,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     background:rgba(0,0,0,.25);
     color:#fff;
     outline:none;
+    box-sizing:border-box;
   }
   input:focus{ border-color:rgba(255,255,255,.38); box-shadow:0 0 0 3px rgba(255,255,255,.10); }
 
@@ -193,18 +241,12 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     font-weight:800;
     cursor:pointer;
     box-shadow:0 10px 22px rgba(0,0,0,.20);
-    transition:transform .12s ease, background .12s ease, border-color .12s ease;
+    transition:transform .12s ease, background .12s ease;
     text-decoration:none;
   }
-  .btn:hover{ transform:translateY(-1px); background:rgba(255,255,255,.18); border-color:rgba(255,255,255,.35); }
+  .btn:hover{ transform:translateY(-1px); background:rgba(255,255,255,.18); }
   .btn.ok{ border-color:rgba(124,255,178,.35); background:rgba(124,255,178,.10); }
 
-  .msg-ok{
-    margin:0 0 10px 0; padding:10px 12px; border-radius:12px;
-    border:1px solid rgba(124,255,178,.35);
-    background:rgba(124,255,178,.12);
-    color:var(--ok); font-weight:800;
-  }
   .msg-err{
     margin:0 0 10px 0; padding:10px 12px; border-radius:12px;
     border:1px solid rgba(255,141,161,.35);
@@ -212,16 +254,17 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     color:var(--err); font-weight:800;
   }
   .muted{ color:var(--muted); font-size:13px; margin-top:6px; }
-    a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
+  .grid-2{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:12px;
+  }
+  @media (max-width: 700px){ .grid-2{ grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
 <div class="backdrop">
   <div class="wrap">
-
     <div class="topbar">
       <div class="brand">
         <h1>Porbeheer</h1>
@@ -239,29 +282,46 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
 
     <div class="panel">
       <h2 style="margin:0 0 8px 0;">Nieuwe gebruiker</h2>
-      <div class="muted">Meerdere rollen mogelijk. De hoogste rol wordt automatisch als “primair” gezet.</div>
+      <div class="muted">Meerdere rollen mogelijk. De hoogste rol wordt automatisch als primair gezet. Na aanmaken wordt een verificatiemail verstuurd.</div>
 
-      <div style="margin-top:12px">
-        <?php if ($success): ?><div class="msg-ok"><?= h($success) ?></div><?php endif; ?>
-        <?php foreach ($errors as $e): ?><div class="msg-err"><?= h($e) ?></div><?php endforeach; ?>
-      </div>
+      <?php foreach ($errors as $e): ?><div class="msg-err"><?= h($e) ?></div><?php endforeach; ?>
 
       <form method="post" autocomplete="off">
         <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
 
-        <label>Gebruikersnaam
-          <input type="text" name="username" required minlength="3" autocomplete="off" value="<?= h((string)($_POST['username'] ?? '')) ?>">
-        </label>
+        <div class="grid-2">
+          <div>
+            <label>E‑mailadres *
+              <input type="email" name="email" required autocomplete="email" value="<?= h((string)($_POST['email'] ?? '')) ?>">
+            </label>
+            <label>Wachtwoord *
+              <input type="password" name="password" required minlength="10" autocomplete="new-password">
+            </label>
+          </div>
+          <div>
+            <label>Aanspreektitel (optioneel)
+              <select name="title">
+                <?php foreach ($titleOptions as $opt): ?>
+                  <option value="<?= h($opt) ?>" <?= (($_POST['title'] ?? '') === $opt) ? 'selected' : '' ?>><?= $opt === '' ? '(geen)' : h($opt) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+            <label>Voornaam
+              <input type="text" name="first_name" value="<?= h((string)($_POST['first_name'] ?? '')) ?>">
+            </label>
+            <label>Tussenvoegsel
+              <input type="text" name="tussenvoegsel" value="<?= h((string)($_POST['tussenvoegsel'] ?? '')) ?>">
+            </label>
+            <label>Achternaam
+              <input type="text" name="last_name" value="<?= h((string)($_POST['last_name'] ?? '')) ?>">
+            </label>
+            <label>Telefoon (06...)
+              <input type="text" name="phone" value="<?= h((string)($_POST['phone'] ?? '')) ?>">
+            </label>
+          </div>
+        </div>
 
-        <label>E-mail
-          <input type="text" name="email" required autocomplete="email" value="<?= h((string)($_POST['email'] ?? '')) ?>">
-        </label>
-
-        <label>Wachtwoord
-          <input type="password" name="password" required minlength="10" autocomplete="new-password">
-        </label>
-
-        <label>Rollen</label>
+        <label>Rollen *</label>
         <div class="roles">
           <?php
             $postedRoles = $_POST['roles'] ?? ['GEBRUIKER'];
@@ -277,11 +337,10 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
 
         <div class="row">
           <a class="btn" href="/admin/users.php">← Terug</a>
-          <button class="btn ok" type="submit">Aanmaken</button>
+          <button class="btn ok" type="submit">Aanmaken & verificatiemail sturen</button>
         </div>
       </form>
     </div>
-
   </div>
 </div>
 </body>

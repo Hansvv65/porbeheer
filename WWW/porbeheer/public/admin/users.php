@@ -11,7 +11,6 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
 
-
 function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
 $show = (string)($_GET['show'] ?? 'active'); // active|all|deleted
@@ -29,6 +28,9 @@ $users = $pdo->query("
     u.last_login_at,
     u.failed_attempts, u.locked_until,
     u.deleted_at, u.deleted_reason,
+    u.email_verified_at,
+    u.first_name, u.tussenvoegsel, u.last_name, u.phone,
+    u.verification_token, u.verification_expires,
     r.roles_csv
   FROM users u
   LEFT JOIN (
@@ -43,6 +45,14 @@ $users = $pdo->query("
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
 
+// Helper: volledige naam
+function fullName($u): string {
+    $parts = [];
+    if (!empty($u['first_name'])) $parts[] = $u['first_name'];
+    if (!empty($u['tussenvoegsel'])) $parts[] = $u['tussenvoegsel'];
+    if (!empty($u['last_name'])) $parts[] = $u['last_name'];
+    return $parts ? implode(' ', $parts) : '';
+}
 ?>
 <!DOCTYPE html>
 <html lang="nl">
@@ -71,7 +81,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
     padding:26px; box-sizing:border-box;
     display:flex; justify-content:center;
   }
-  .wrap{ width:min(1100px, 96vw); }
+  .wrap{ width:min(1200px, 96vw); }
 
   .topbar{
     display:flex; align-items:flex-end; justify-content:space-between;
@@ -87,7 +97,6 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
     padding:12px 14px;
     box-shadow:var(--shadow);
     backdrop-filter:blur(10px);
-    -webkit-backdrop-filter:blur(10px);
     min-width:260px;
   }
   .userbox .line1{font-weight:bold}
@@ -103,7 +112,6 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
     background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
     box-shadow:var(--shadow);
     backdrop-filter:blur(12px);
-    -webkit-backdrop-filter:blur(12px);
     padding:18px;
   }
 
@@ -139,10 +147,9 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
     border:1px solid rgba(255,255,255,.18);
     background:rgba(0,0,0,.18);
     box-shadow:0 12px 28px rgba(0,0,0,.35);
-    padding:14px 14px;
+    padding:14px;
     backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    transition: transform .12s ease, background .12s ease, border-color .12s ease;
+    transition: transform .12s ease, background .12s ease;
   }
   .card:hover{ transform: translateY(-1px); background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.30); }
   .row1{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; }
@@ -157,7 +164,6 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
     border:1px solid rgba(255,255,255,.18);
     background:rgba(255,255,255,.08);
     font-weight:900;
-    letter-spacing:.2px;
     font-size:12px;
   }
   .badge.ok{ border-color:rgba(124,255,178,.35); color:var(--ok); background:rgba(124,255,178,.10); }
@@ -182,10 +188,6 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
   .label{ color:var(--muted); font-size:12px; font-weight:800; }
   .value{ margin-top:4px; font-weight:900; }
   .small{ margin-top:6px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
-    a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
 </style>
 </head>
 <body>
@@ -204,7 +206,6 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
           <a href="/admin/dashboard.php">Dashboard</a> •
           <a href="/admin/beheer.php">Beheer</a> • 
           <a href="/logout.php">Uitloggen</a>
-
         </div>
       </div>
     </div>
@@ -234,20 +235,14 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
 
             $isAdmin   = in_array('ADMIN', $rolesArr, true) || ((string)$u['role'] === 'ADMIN');
             $isDeleted = !empty($u['deleted_at']);
-
             $status = (string)($u['status'] ?? 'PENDING');
-
-            // CONSISTENT: status is leidend voor actief/inactief
             $effectiveActive = ($status === 'ACTIVE') && !$isDeleted;
-
-            // locked: status BLOCKED of tijdelijke lock
             $lockedUntil = $u['locked_until'] ?? null;
             $isTempLocked = $lockedUntil && strtotime((string)$lockedUntil) > time();
             $showLocked = ($status === 'BLOCKED') || $isTempLocked;
 
-            $attempts = (int)($u['failed_attempts'] ?? 0);
-            $lastLogin = (string)($u['last_login_at'] ?? '—');
-
+            $emailVerified = !empty($u['email_verified_at']);
+            $fullName = fullName($u);
             $detailHref = "/admin/users_detail.php?id=" . $uid;
           ?>
           <a class="card" href="<?= h($detailHref) ?>">
@@ -255,56 +250,42 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
               <div>
                 <div class="who">#<?= $uid ?> • <?= h((string)$u['username']) ?></div>
                 <div class="small"><?= h((string)($u['email'] ?? '')) ?></div>
+                <?php if ($fullName): ?>
+                  <div class="small"><?= h($fullName) ?></div>
+                <?php endif; ?>
               </div>
-                  <div class="badges">
-                    <?php if ($isAdmin): ?><span class="badge ok">ADMIN</span><?php endif; ?>
-
-                    <?php
-                      // Eén duidelijke statusbadge
-                      $statusLabel = $status;
-                      $statusClass = 'badge';
-
-                      if ($isDeleted) {
-                          $statusLabel = 'DELETED';
-                          $statusClass = 'badge off';
-                      } elseif ($showLocked) {
-                          if ($isTempLocked) {
-                              $statusLabel = 'LOCKED (tot ' . date('Y-m-d H:i', strtotime((string)$lockedUntil)) . ')';
-                          } else {
-                              $statusLabel = 'BLOCKED';
-                          }
-                          $statusClass = 'badge off';
-                      } else {
-                          if ($status === 'ACTIVE') {
-                              $statusLabel = 'ACTIVE';
-                              $statusClass = 'badge ok';
-                          } elseif ($status === 'PENDING') {
-                              $statusLabel = 'PENDING';
-                              $statusClass = 'badge warn';
-                          } elseif ($status === 'BLOCKED') {
-                              $statusLabel = 'BLOCKED';
-                              $statusClass = 'badge off';
-                          } else {
-                              $statusLabel = $status; // fallback
-                              $statusClass = 'badge';
-                          }
-                      }
-                    ?>
-
-                    <span class="<?= h($statusClass) ?>"><?= h($statusLabel) ?></span>
-                </div>
+              <div class="badges">
+                <?php if ($isAdmin): ?><span class="badge ok">ADMIN</span><?php endif; ?>
+                <?php
+                  $statusLabel = $status;
+                  $statusClass = 'badge';
+                  if ($isDeleted) {
+                      $statusLabel = 'DELETED';
+                      $statusClass = 'badge off';
+                  } elseif ($showLocked) {
+                      $statusLabel = $isTempLocked ? 'LOCKED' : 'BLOCKED';
+                      $statusClass = 'badge off';
+                  } else {
+                      if ($status === 'ACTIVE') { $statusLabel = 'ACTIVE'; $statusClass = 'badge ok'; }
+                      elseif ($status === 'PENDING') { $statusLabel = 'PENDING'; $statusClass = 'badge warn'; }
+                      elseif ($status === 'BLOCKED') { $statusLabel = 'BLOCKED'; $statusClass = 'badge off'; }
+                  }
+                ?>
+                <span class="<?= h($statusClass) ?>"><?= h($statusLabel) ?></span>
+                <span class="badge <?= $emailVerified ? 'ok' : 'warn' ?>"><?= $emailVerified ? 'E‑mail geverifieerd' : 'Niet geverifieerd' ?></span>
+              </div>
             </div>
 
             <div class="grid">
               <div class="box">
-                <div class="label">Last login</div>
-                <div class="value"><?= h($lastLogin) ?></div>
+                <div class="label">Laatste login</div>
+                <div class="value"><?= h((string)$u['last_login_at'] ?: '—') ?></div>
                 <div class="small">Aangemaakt: <?= h((string)$u['created_at']) ?></div>
               </div>
               <div class="box">
                 <div class="label">Lock</div>
-                <div class="value">attempts: <?= $attempts ?></div>
-                <div class="small">locked_until: <?= h((string)($lockedUntil ?? '—')) ?></div>
+                <div class="value">pogingen: <?= (int)$u['failed_attempts'] ?></div>
+                <div class="small">lock tot: <?= h((string)($lockedUntil ?? '—')) ?></div>
               </div>
               <div class="box">
                 <div class="label">Rollen</div>
@@ -321,9 +302,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users.php', ['show'=>$show]);
           </a>
         <?php endforeach; ?>
       </div>
-
     </div>
-
   </div>
 </div>
 </body>

@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+/* reset.php - Wachtwoord resetten */
+
 require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/mail.php';
 

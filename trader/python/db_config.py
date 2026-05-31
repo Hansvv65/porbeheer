@@ -1,6 +1,8 @@
 """Centrale databaseconfiguratie voor Trading PY scripts."""
 from __future__ import annotations
 
+# db_config.py
+
 import os
 from dataclasses import dataclass
 

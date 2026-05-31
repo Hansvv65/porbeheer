@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 /*
+mail.php - wrapper voor PHPMailer   
 $base = __DIR__ . '/lib/PHPMailer/src/';
 if (!is_file($base . 'PHPMailer.php')) {
     throw new RuntimeException('PHPMailer ontbreekt in app/lib/PHPMailer/src/');

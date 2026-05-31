@@ -62,9 +62,11 @@ $openPositions = fetchAllRows($pdo, "
     ORDER BY p.opened_at DESC
     LIMIT 20
 ");
+
 $assetRows = fetchAllRows($pdo, "
-    SELECT b.id, b.symbol, b.asset_type, b.is_active, b.priority_order,
-           t.display_name,
+    SELECT b.id, b.symbol, 
+           COALESCE(t.display_name, u.display_name, b.symbol) AS display_name,
+           b.asset_type, b.is_active, b.priority_order,
            snap.price AS last_price,
            snap.trend_state,
            snap.trend_score,
@@ -76,9 +78,12 @@ $assetRows = fetchAllRows($pdo, "
            run.notes AS run_notes,
            run.created_at AS run_created_at,
            pos.quantity,
-           pos.avg_price
+           pos.avg_price,
+           news.sentiment_label,
+           news.sentiment_score
     FROM bot_symbols b
     LEFT JOIN tracked_symbols t ON t.symbol = b.symbol
+    LEFT JOIN asset_universe u ON u.symbol = b.symbol
     LEFT JOIN asset_snapshots snap ON snap.id = (
         SELECT s.id FROM asset_snapshots s WHERE s.symbol = b.symbol ORDER BY s.snapshot_time DESC, s.id DESC LIMIT 1
     )
@@ -91,7 +96,20 @@ $assetRows = fetchAllRows($pdo, "
     LEFT JOIN positions pos ON pos.id = (
         SELECT p.id FROM positions p WHERE p.symbol = b.symbol AND p.status = 'OPEN' ORDER BY p.id DESC LIMIT 1
     )
-    ORDER BY b.is_active DESC, b.priority_order ASC, b.symbol ASC
+    LEFT JOIN (
+        SELECT symbol, sentiment_label, sentiment_score
+        FROM asset_news
+        WHERE (symbol, published_at) IN (
+            SELECT symbol, MAX(published_at)
+            FROM asset_news
+            GROUP BY symbol
+        )
+    ) news ON news.symbol = b.symbol
+    WHERE b.is_active = 1
+      AND b.symbol NOT LIKE '%=F'      -- futures uitsluiten
+      AND b.symbol NOT LIKE '%.SS'     -- Chinese aandelen (Shanghai)
+      AND b.symbol NOT LIKE '%.SZ'     -- Chinese aandelen (Shenzhen)
+    ORDER BY b.priority_order ASC, b.symbol ASC
     LIMIT 50
 ");
 
@@ -100,6 +118,7 @@ renderPageStart($appName, 'Eén consistent dashboard voor status, wallet, trends
     ['href' => appUrl('/bot_log.php'), 'label' => 'Bot log', 'secondary' => true],
     ['href' => appUrl('/symbols.php'), 'label' => 'Mijn assets', 'secondary' => true],
     ['href' => appUrl('/view_ai_advice.php'), 'label' => 'Adviezen', 'secondary' => true],
+    ['href' => appUrl('/trade_history.php'), 'label' => 'Trade geschiedenis', 'secondary' => true], 
 ]);
 ?>
 <div class="grid">
@@ -190,6 +209,7 @@ renderPageStart($appName, 'Eén consistent dashboard voor status, wallet, trends
                         <th>Laatste prijs</th>
                         <th>Trend</th>
                         <th>24u</th>
+                        <th>Sentiment</th>
                         <th>Laatste actie</th>
                         <th>Waarom niet/wel</th>
                         <th>Open positie</th>
@@ -207,6 +227,26 @@ renderPageStart($appName, 'Eén consistent dashboard voor status, wallet, trends
                         <td><?= formatPrice($row['last_price'] ?? null, 4) ?></td>
                         <td><span class="<?= badgeClassForTrend($row['trend_state'] ?? null) ?>"><?= h((string)($row['trend_state'] ?? 'ONBEKEND')) ?></span><br><span class="muted">score <?= h((string)($row['trend_score'] ?? '-')) ?></span></td>
                         <td><?= formatPct($row['change_24h'] ?? null, 2) ?></td>
+                        <td>
+                            <?php
+                            $label = $row['sentiment_label'] ?? null;
+                            $score = $row['sentiment_score'] ?? null;
+                            if ($label) {
+                                $badgeClass = match($label) {
+                                    'POSITIVE' => 'badge-good',
+                                    'NEGATIVE' => 'badge-bad',
+                                    'MIXED'    => 'badge-neutral',
+                                    default    => 'badge-neutral'
+                                };
+                                echo "<span class=\"$badgeClass\">" . h($label) . "</span>";
+                                if ($score !== null) {
+                                    echo " <span class=\"muted\">(" . number_format((float)$score, 2) . ")</span>";
+                                }
+                            } else {
+                                echo "<span class=\"muted\">—</span>";
+                            }
+                            ?>
+                        </td>
                         <td><span class="<?= badgeClassForAction($row['action_taken'] ?? ($row['signal_type'] ?? 'SKIP')) ?>"><?= h((string)($row['action_taken'] ?? ($row['signal_type'] ?? 'SKIP'))) ?></span><br><span class="muted"><?= formatDateTime($row['run_created_at'] ?? $row['signal_time'] ?? null) ?></span></td>
                         <td><?= h((string)($row['signal_reason'] ?: $row['run_notes'] ?: 'Geen toelichting')) ?></td>
                         <td>
