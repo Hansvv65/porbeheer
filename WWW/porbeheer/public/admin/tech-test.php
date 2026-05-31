@@ -6,9 +6,6 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../assets/includes/header.php';
 
-use Dompdf\Dompdf;
-use Dompdf\Options;
-
 requireRole(['ADMIN', 'BEHEER']);
 
 // ===== AUDIT LOGGING FUNCTIE (indien niet al globaal aanwezig) =====
@@ -89,7 +86,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'dompdf_test') {
         ]);
     }
 
-    if (!class_exists(Dompdf::class)) {
+    if (!class_exists('Dompdf\Dompdf')) {
         $errorMsg = 'DomPDF is niet beschikbaar. Controleer of dompdf/dompdf via Composer is geïnstalleerd.';
         if ($pdo) {
             auditLog($pdo, 'TEST_FAIL', 'dompdf_class_missing', [
@@ -102,14 +99,13 @@ if (isset($_GET['action']) && $_GET['action'] === 'dompdf_test') {
         exit;
     }
 
-    // HTML voor de test-PDF (gebruikt standaard PDF-font Helvetica)
     $html = '<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>DomPDF Test</title>
     <style>
-        body { font-family: Helvetica, sans-serif; margin: 2cm; }
+        body { font-family: DejaVu Sans, sans-serif; margin: 2cm; }
         h1 { color: #1e3a8a; }
         p { line-height: 1.5; }
         .footer { margin-top: 2cm; font-size: 10pt; color: #666; }
@@ -124,14 +120,28 @@ if (isset($_GET['action']) && $_GET['action'] === 'dompdf_test') {
 </html>';
 
     try {
-        // === Werkende DomPDF‑configuratie uit de kleine test ===
-        $options = new Options();
-        // Gebruik een standaard PDF-lettertype (core font) – geen externe bestanden nodig
-        $options->set('defaultFont', 'Helvetica');
-        $options->set('isHtml5ParserEnabled', true);
-        // Geen fontDir, fontCache of tempDir instellen → voorkomt "Path cannot be empty"
+        // Bepaal het absolute pad naar de fonts map van DomPDF (relatief t.o.v. de vendor dir)
+        // Vendor dir is twee niveaus boven admin/tech-test.php: __DIR__/../../vendor
+        $vendorDir = realpath(__DIR__ . '/../../../libs/porbeheer/vendor');
+        if (!$vendorDir) {
+            throw new Exception('Vendor map niet gevonden. Controleer of Composer is uitgevoerd.');
+        }
+        $dompdfFontDir = $vendorDir . '/dompdf/dompdf/lib/fonts';
+        if (!is_dir($dompdfFontDir)) {
+            // Map bestaat niet: probeer hem aan te maken
+            if (!mkdir($dompdfFontDir, 0755, true) && !is_dir($dompdfFontDir)) {
+                throw new Exception('Kon font map niet aanmaken: ' . $dompdfFontDir);
+            }
+        }
 
-        $dompdf = new Dompdf($options);
+        // Configureer DomPDF met de fonts map
+        $options = new Dompdf\Options();
+        $options->set('fontDir', $dompdfFontDir);
+        $options->set('fontCache', sys_get_temp_dir()); // cache in systeem temp
+        $options->set('defaultFont', 'DejaVu Sans');
+        $options->set('isRemoteEnabled', false); // voor test niet nodig
+
+        $dompdf = new Dompdf\Dompdf($options);
         $dompdf->loadHtml($html);
         $dompdf->setPaper('A4', 'portrait');
         $dompdf->render();
@@ -232,7 +242,7 @@ $baconOk      = class_exists(\BaconQrCode\Writer::class);
 $daspridOk    = class_exists(\DASPRiD\Enum\AbstractEnum::class);
 $imagickOk    = extension_loaded('imagick');
 $pdoOk        = isset($pdo) && $pdo instanceof PDO;
-$dompdfOk     = class_exists(Dompdf::class);
+$dompdfOk     = class_exists(\Dompdf\Dompdf::class);
 
 $mailHost     = (string)($config['mail']['smtp_host'] ?? '');
 $mailUser     = (string)($config['mail']['smtp_user'] ?? '');

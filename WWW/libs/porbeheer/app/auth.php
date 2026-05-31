@@ -386,6 +386,15 @@ function loadAuthUserByUsername(PDO $pdo, string $username): ?array
     return $u ?: null;
 }
 
+function loadAuthUserByEmail(PDO $pdo, string $email): ?array
+{
+    $email = strtolower(trim($email));
+    $st = $pdo->prepare("SELECT * FROM users WHERE email = ? LIMIT 1");
+    $st->execute([$email]);
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+    return $u ?: null;
+}
+
 function loadAuthUserById(PDO $pdo, int $userId): ?array
 {
     $st = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
@@ -508,9 +517,8 @@ function attemptPrimaryLogin(PDO $pdo, string $username, string $password): arra
     if ($username === '' || $password === '') {
         return ['ok' => false, 'code' => 'INVALID_INPUT'];
     }
-
-    $u = loadAuthUserByUsername($pdo, $username);
-
+    $u = loadAuthUserByEmail($pdo, $username);
+    
     if (!$u || empty($u['password_hash'])) {
         usleep(120000);
         return ['ok' => false, 'code' => 'BADCREDS'];

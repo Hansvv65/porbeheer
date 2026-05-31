@@ -2,14 +2,7 @@
 declare(strict_types=1);
 
 /*
- * contract_edit.php
- *   - Pagina voor het bekijken, aanmaken en bewerken van sleutelcontracten
- *   - Toegang alleen voor ADMIN en BEHEER
- *   - Ondersteunt PDF-generatie via Dompdf
- *   - AJAX endpoints voor dynamische data (lockers, contacten, PDF ophalen)
- *   - Contractgegevens worden opgeslagen in de key_contracts tabel, inclusief blob voor PDF
- *   - Biedt zowel dropdown selectie van bestaande bands als een vrij veld voor custom bandnaam
- *   - Logt belangrijke acties in auditlog
+ * contract_edit.php – volledig werkend, met volledige namen bestuurslid/bandlid
  */
 
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
@@ -69,6 +62,47 @@ if (isset($_GET['action'])) {
             echo json_encode($response);
             exit;
         }
+        if ($_GET['action'] === 'get_contacts_for_band') {
+            $bandId = (int)($_GET['band_id'] ?? 0);
+            if ($bandId <= 0) { echo json_encode([]); exit; }
+            $stmt = $pdo->prepare("
+                SELECT c.id, c.first_name, c.tussenvoegsel, c.last_name, c.name, c.email
+                FROM contacts c
+                JOIN bands b ON (b.primary_contact_id = c.id OR b.secondary_contact_id = c.id)
+                    AND b.id = ? AND b.deleted_at IS NULL
+                WHERE c.deleted_at IS NULL
+                ORDER BY c.name
+            ");
+            $stmt->execute([$bandId]);
+            $contacts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            // Bouw volledige naam voor weergave
+            foreach ($contacts as &$c) {
+                $c['full_name'] = trim(implode(' ', array_filter([$c['first_name'], $c['tussenvoegsel'], $c['last_name']])));
+                if (empty($c['full_name'])) $c['full_name'] = $c['name'];
+            }
+            echo json_encode($contacts);
+            exit;
+        }
+        if ($_GET['action'] === 'get_contacts_without_band') {
+            $stmt = $pdo->query("
+                SELECT c.id, c.first_name, c.tussenvoegsel, c.last_name, c.name, c.email
+                FROM contacts c
+                WHERE c.deleted_at IS NULL
+                  AND c.id NOT IN (
+                    SELECT primary_contact_id FROM bands WHERE primary_contact_id IS NOT NULL AND deleted_at IS NULL
+                    UNION
+                    SELECT secondary_contact_id FROM bands WHERE secondary_contact_id IS NOT NULL AND deleted_at IS NULL
+                  )
+                ORDER BY c.name
+            ");
+            $contacts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($contacts as &$c) {
+                $c['full_name'] = trim(implode(' ', array_filter([$c['first_name'], $c['tussenvoegsel'], $c['last_name']])));
+                if (empty($c['full_name'])) $c['full_name'] = $c['name'];
+            }
+            echo json_encode($contacts);
+            exit;
+        }
         if ($_GET['action'] === 'get_all_contacts') {
             $stmt = $pdo->query("SELECT id, name, email FROM contacts WHERE deleted_at IS NULL ORDER BY name");
             echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -89,20 +123,19 @@ if (isset($_GET['action'])) {
             echo $row['contract_pdf'];
             exit;
         }
+        http_response_code(400);
+        echo json_encode(['error' => 'Ongeldige action']);
+        exit;
     } catch (Throwable $e) {
         http_response_code(500);
         echo json_encode(['error' => $e->getMessage()]);
         exit;
     }
-    http_response_code(400);
-    echo json_encode(['error' => 'Ongeldige action']);
-    exit;
 }
 
 // ---------- PAGINA OPBOUW ----------
 include __DIR__ . '/../assets/includes/header.php';
 
-// Dompdf wordt geladen via de Composer autoloader (geen handmatige register meer nodig)
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
@@ -117,20 +150,20 @@ function h($v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 }
 
-// Database kolommen zijn handmatig toegevoegd, dus geen ALTER TABLE meer
+function buildFullName(?string $first, ?string $tussen, ?string $last): string {
+    return trim(implode(' ', array_filter([$first, $tussen, $last])));
+}
 
 $errors = [];
 $msg = null;
 $id = (int)($_GET['id'] ?? ($_POST['id'] ?? 0));
 if ($id <= 0) { header('Location: /admin/keys.php'); exit; }
 
-// Haal sleutelgegevens op
 $st = $pdo->prepare("SELECT * FROM `keys` WHERE id = ? AND deleted_at IS NULL");
 $st->execute([$id]);
 $row = $st->fetch(PDO::FETCH_ASSOC);
 if (!$row) { header('Location: /admin/keys.php?msg=notfound'); exit; }
 
-// Huidige locker en band info
 $lockers = $pdo->query("SELECT l.id, l.locker_no, l.band_id, b.name AS band_name FROM lockers l LEFT JOIN bands b ON b.id = l.band_id AND b.deleted_at IS NULL WHERE l.deleted_at IS NULL ORDER BY l.locker_no")->fetchAll();
 $currentLocker = null; $currentBandId = null; $currentBandName = null; $currentLockerNo = null;
 if ($row['locker_id']) {
@@ -139,10 +172,8 @@ if ($row['locker_id']) {
     }
 }
 
-// Bepaal of de sleutel aan een band is gekoppeld
 $hasBand = !empty($currentBandName);
 
-// Bestaand contract ophalen (met blob velden)
 $existingContract = null; $selectedBandContactId = null; $selectedBoardMemberId = null;
 $contractLocation = 'Pop Oefenruimte Zevenaar';
 $contractStartDate = date('Y-m-d'); $contractEndDate = date('Y-m-d', strtotime('+1 year'));
@@ -169,53 +200,40 @@ if ($existingContract) {
     }
 }
 
-// Haal alle bands op voor de dropdown
 $bands = $pdo->query("SELECT id, name FROM bands WHERE deleted_at IS NULL ORDER BY name")->fetchAll();
 
-// ---------- PDF generatie functie (AANGEPAST: gebruikt standaard PDF-font Helvetica) ----------
+// Bestuursleden ophalen (met losse naamvelden)
+$boardMembers = $pdo->query("
+    SELECT u.id, u.username, u.email, u.first_name, u.tussenvoegsel, u.last_name
+    FROM users u
+    JOIN user_roles ur ON ur.user_id = u.id
+    WHERE ur.role = 'BESTUURSLID' AND u.deleted_at IS NULL AND u.status = 'ACTIVE'
+    ORDER BY u.username
+")->fetchAll();
+
+// Default bestuurslid
+$defaultBoardMemberId = null;
+if ($role === 'BESTUURSLID') {
+    $defaultBoardMemberId = (int)($user['id'] ?? 0);
+}
+if ($selectedBoardMemberId) {
+    $defaultBoardMemberId = $selectedBoardMemberId;
+} elseif (!$defaultBoardMemberId && count($boardMembers) > 0) {
+    $defaultBoardMemberId = $boardMembers[0]['id'];
+}
+
+// ---------- PDF generatie ----------
 function generateContractPDF(
-    string $bandName,
-    string $bandContactName,
-    string $bandContactEmail,
-    string $boardMemberName,
-    string $location,
-    string $lockerNo,
-    string $keyCode,
-    string $keyDescription,
-    string $startDate,
-    string $endDate
+    string $bandName, string $bandContactName, string $bandContactEmail,
+    string $boardMemberName, string $location, string $lockerNo,
+    string $keyCode, string $keyDescription, string $startDate, string $endDate
 ): string {
-    $html = '<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Sleutelcontract ' . htmlspecialchars($keyCode) . '</title>
-    <style>
-        body { font-family: Helvetica, sans-serif; margin: 1.5cm 1.5cm; line-height: 1.25; color: #1e293b; font-size: 11pt; }
-        h1 { text-align: center; color: #1e3a8a; margin-bottom: 12px; font-size: 20px; }
-        h2 { font-size: 13pt; margin-top: 12px; margin-bottom: 4px; color: #1e3a8a; border-bottom: 1px solid #ccc; padding-bottom: 3px; }
-        .header { text-align: center; margin-bottom: 16px; }
-        .parties { margin: 12px 0; }
-        .key-details { background: #f8fafc; padding: 10px 12px; margin: 12px 0; border-left: 4px solid #2563eb; }
-        .signature-box { margin-top: 24px; }
-        .signature-line { border-top: 1px solid #000; width: 220px; margin-top: 30px; padding-top: 4px; display: inline-block; font-size: 10pt; }
-        .footer { margin-top: 24px; font-size: 9pt; color: #64748b; text-align: center; }
-        .bold { font-weight: bold; }
-        ol { padding-left: 20px; margin: 6px 0; }
-        li { margin-bottom: 3px; }
-        p { margin: 6px 0; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        td { vertical-align: top; padding: 0; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>SLEUTELOVEREENKOMST</h1>
-        <p>Stichting Popcultuur Zevenaar – POR-kast beheer</p>
-    </div>
+    $html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sleutelcontract ' . htmlspecialchars($keyCode) . '</title>
+    <style>body{font-family:Helvetica,sans-serif;margin:1.5cm 1.5cm;line-height:1.25;color:#1e293b;font-size:11pt}h1{text-align:center;color:#1e3a8a;margin-bottom:12px;font-size:20px}h2{font-size:13pt;margin-top:12px;margin-bottom:4px;color:#1e3a8a;border-bottom:1px solid #ccc;padding-bottom:3px}.header{text-align:center;margin-bottom:16px}.parties{margin:12px 0}.key-details{background:#f8fafc;padding:10px 12px;margin:12px 0;border-left:4px solid #2563eb}.signature-box{margin-top:24px}.signature-line{border-top:1px solid #000;width:220px;margin-top:30px;padding-top:4px;display:inline-block;font-size:10pt}.footer{margin-top:24px;font-size:9pt;color:#64748b;text-align:center}.bold{font-weight:bold}ol{padding-left:20px;margin:6px 0}li{margin-bottom:3px}p{margin:6px 0}table{width:100%;border-collapse:collapse;margin-top:10px}td{vertical-align:top;padding:0}</style></head><body>
+    <div class="header"><h1>SLEUTELOVEREENKOMST</h1><p>Stichting Popkultuur Zevenaar – POR-kast beheer</p></div>
     <div class="parties">
         <p><span class="bold">ONDERGETEKENDEN:</span></p>
-        <p><strong>1. Stichting Popcultuur Zevenaar</strong>, statutair gevestigd te Zevenaar,<br>
+        <p><strong>1. Stichting Popkultuur Zevenaar</strong>, statutair gevestigd te Zevenaar,<br>
         vertegenwoordigd door <span class="bold">' . htmlspecialchars($boardMemberName) . '</span> (bestuurslid),<br>
         hierna te noemen: <strong>"Verhuurder"</strong>;</p>
         <p><strong>2. ' . htmlspecialchars($bandName) . '</strong>,<br>
@@ -240,52 +258,30 @@ function generateContractPDF(
         <li>De Gebruiker draagt zorg voor de sleutel en neemt redelijke maatregelen om misbruik te voorkomen.</li>
         <li>Na beëindiging van het gebruik van de kast dient de sleutel binnen 7 dagen te worden ingeleverd bij Verhuurder.</li>
     </ol>
-    <br style="page-break-before: always; clear: both;">
+    <div style="page-break-before: always; clear: both;"></div>
     <h2>Artikel 3 – Aansprakelijkheid en kosten</h2>
     <ol>
         <li>Bij verlies of diefstal is de Gebruiker een vergoeding verschuldigd van € 75,- per sleutel voor vervanging en administratie.</li>
         <li>Verhuurder is niet aansprakelijk voor schade ontstaan door onbevoegd gebruik van de sleutel, tenzij sprake is van opzet of grove schuld.</li>
     </ol>
     <h2>Artikel 4 – Duur en beëindiging</h2>
-    <p>Deze overeenkomst gaat in op <strong>' . htmlspecialchars($startDate) . '</strong> en eindigt op <strong>' . htmlspecialchars($endDate) . '</strong>, tenzij tussentijds opgezegd met inachtneming van een opzegtermijn van één maand.</p>
+    <p>Deze overeenkomst gaat in op <strong>' . htmlspecialchars($startDate) . '</strong> en eindigt na schriftelijke opzegging door een der partijen, met inachtneming van een opzegtermijn van één maand.</p>
     <h2>Artikel 5 – Slotbepalingen</h2>
     <ol>
         <li>Op deze overeenkomst is Nederlands recht van toepassing.</li>
         <li>Wijzigingen of aanvullingen zijn slechts geldig indien schriftelijk overeengekomen.</li>
     </ol>
-    <div class="signature-box">
-        <table>
-            <tr>
-                <td style="width:45%;">
-                    <strong>Verhuurder</strong><br>
-                    Stichting Popcultuur Zevenaar<br><br>
-                    Naam: ' . htmlspecialchars($boardMemberName) . '<br><br>
-                    <div class="signature-line">Handtekening</div><br>
-                    Datum: ____________________
-                </td>
-                <td style="width:10%;"></td>
-                <td style="width:45%;">
-                    <strong>Gebruiker</strong><br>
-                    ' . htmlspecialchars($bandName) . '<br>
-                    Namens deze: ' . htmlspecialchars($bandContactName) . '<br><br>
-                    <div class="signature-line">Handtekening</div><br>
-                    Datum: ____________________
-                </td>
-            </tr>
-        </table>
-    </div>
-    <div class="footer">
-        <p>Contractnummer: KEY-CON-' . date('Ymd') . '-' . str_pad((string)$keyCode, 5, '0', STR_PAD_LEFT) . ' | Gegenereerd op ' . date('d-m-Y H:i') . '</p>
-    </div>
-</body>
-</html>';
+    <div class="signature-box"><table><tr>
+        <td style="width:45%;"><strong>Verhuurder</strong><br>Stichting Popkultuur Zevenaar<br><br>Naam: ' . htmlspecialchars($boardMemberName) . '<br><br><div class="signature-line">Handtekening</div><br>Datum: ____________________</td>
+        <td style="width:10%;"></td>
+        <td style="width:45%;"><strong>Gebruiker</strong><br>' . htmlspecialchars($bandName) . '<br>Namens deze: ' . htmlspecialchars($bandContactName) . '<br><br><div class="signature-line">Handtekening</div><br>Datum: ____________________</td>
+    </tr></table></div>
+    <div class="footer"><p>Contractnummer: KEY-CON-' . date('Ymd') . '-' . str_pad((string)$keyCode, 5, '0', STR_PAD_LEFT) . ' | Gegenereerd op ' . date('d-m-Y H:i') . '</p></div>
+</body></html>';
     try {
         $options = new Options();
-        // Gebruik een standaard PDF-lettertype (core font) – geen externe bestanden nodig
         $options->set('defaultFont', 'Helvetica');
         $options->set('isHtml5ParserEnabled', true);
-        // Geen fontDir, fontCache of tempDir instellen → voorkomt "Path cannot be empty"
-
         $dompdf = new Dompdf($options);
         $dompdf->loadHtml($html);
         $dompdf->setPaper('A4', 'portrait');
@@ -297,7 +293,7 @@ function generateContractPDF(
     }
 }
 
-// ---------- preview_pdf actie ----------
+// ---------- preview_pdf ----------
 if (isset($_GET['preview_pdf'])) {
     try {
         $bandContactId = (int)($_GET['band_contact_id'] ?? 0);
@@ -307,9 +303,8 @@ if (isset($_GET['preview_pdf'])) {
         $endDate = trim($_GET['end_date'] ?? date('Y-m-d', strtotime('+1 year')));
         $lockerId = (int)($_GET['locker_id'] ?? 0);
         $customBandName = trim($_GET['custom_band_name'] ?? '');
-
-        // Bepaal bandnaam: eerst uit de geselecteerde band (via dropdown), anders de custom naam
         $bandIdFromDropdown = (int)($_GET['band_id_dropdown'] ?? 0);
+
         $bandName = '';
         if ($bandIdFromDropdown > 0) {
             $stmt = $pdo->prepare("SELECT name FROM bands WHERE id = ?");
@@ -317,9 +312,7 @@ if (isset($_GET['preview_pdf'])) {
             $band = $stmt->fetch();
             if ($band) $bandName = $band['name'];
         }
-        if (empty($bandName) && !empty($customBandName)) {
-            $bandName = $customBandName;
-        }
+        if (empty($bandName) && !empty($customBandName)) $bandName = $customBandName;
         if (empty($bandName)) $bandName = 'Human Kind';
 
         $lockerNo = 'n.v.t.';
@@ -330,21 +323,29 @@ if (isset($_GET['preview_pdf'])) {
             if ($info) $lockerNo = $info['locker_no'] ?? 'n.v.t.';
         }
 
+        // Bandcontact volledige naam
         $bandContactName = ''; $bandContactEmail = '';
         if ($bandContactId > 0) {
-            $stmt = $pdo->prepare("SELECT name, email FROM contacts WHERE id = ?");
+            $stmt = $pdo->prepare("SELECT first_name, tussenvoegsel, last_name, email FROM contacts WHERE id = ?");
             $stmt->execute([$bandContactId]);
             $c = $stmt->fetch();
             if ($c) {
-                $bandContactName = $c['name'];
+                $bandContactName = buildFullName($c['first_name'], $c['tussenvoegsel'], $c['last_name']);
+                if (empty($bandContactName)) $bandContactName = $c['name'] ?? '';
                 $bandContactEmail = $c['email'] ?? '';
             }
         }
 
-        $boardMembersList = $pdo->query("SELECT DISTINCT u.id, u.username, u.email FROM users u JOIN user_roles ur ON ur.user_id = u.id WHERE ur.role = 'BESTUURSLID' AND u.deleted_at IS NULL AND u.status = 'ACTIVE' ORDER BY u.username")->fetchAll();
+        // Bestuurslid volledige naam
         $boardMemberName = '';
-        foreach ($boardMembersList as $m) {
-            if ($m['id'] == $boardMemberId) { $boardMemberName = $m['username'] ?? ''; break; }
+        if ($boardMemberId > 0) {
+            $stmt = $pdo->prepare("SELECT first_name, tussenvoegsel, last_name, username FROM users WHERE id = ?");
+            $stmt->execute([$boardMemberId]);
+            $bm = $stmt->fetch();
+            if ($bm) {
+                $boardMemberName = buildFullName($bm['first_name'], $bm['tussenvoegsel'], $bm['last_name']);
+                if (empty($boardMemberName)) $boardMemberName = $bm['username'] ?? '';
+            }
         }
 
         $pdfContent = generateContractPDF(
@@ -373,28 +374,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_contract'])) {
         $startDate = trim($_POST['start_date'] ?? date('Y-m-d'));
         $endDate = trim($_POST['end_date'] ?? date('Y-m-d', strtotime('+1 year')));
         $lockerId = (int)($_POST['locker_id'] ?? 0);
-        
-        // Verwerk band/organisatie
         $bandOption = $_POST['band_option'] ?? 'custom';
         $bandId = (int)($_POST['band_id_dropdown'] ?? 0);
         $customBandName = trim($_POST['custom_band_name'] ?? '');
-        
+
         if ($bandOption === 'dropdown' && $bandId > 0) {
-            // Kies een bestaande band
             $stmt = $pdo->prepare("SELECT name FROM bands WHERE id = ?");
             $stmt->execute([$bandId]);
             $band = $stmt->fetch();
             $finalBandName = $band ? $band['name'] : 'Human Kind';
         } else {
-            // Vrij veld: gebruik custom_band_name, default 'Human Kind'
             $finalBandName = $customBandName !== '' ? $customBandName : 'Human Kind';
         }
 
         if ($bandContactId <= 0) throw new Exception('Selecteer een contactpersoon');
         if ($boardMemberId <= 0) throw new Exception('Selecteer een bestuurslid');
 
-        $uploadedPdfBlob = null;
-        $uploadedPdfName = null;
+        $uploadedPdfBlob = null; $uploadedPdfName = null;
         if (isset($_FILES['signed_pdf']) && $_FILES['signed_pdf']['error'] === UPLOAD_ERR_OK) {
             $ext = strtolower(pathinfo($_FILES['signed_pdf']['name'], PATHINFO_EXTENSION));
             if ($ext !== 'pdf') throw new Exception('Alleen PDF-bestanden toegestaan');
@@ -402,27 +398,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_contract'])) {
             $uploadedPdfName = $_FILES['signed_pdf']['name'];
         }
 
-        $lockerNo = $currentLockerNo ?? '';
-
-        $contactStmt = $pdo->prepare("SELECT name, email FROM contacts WHERE id = ?");
+        // Bandcontact volledige naam
+        $contactStmt = $pdo->prepare("SELECT first_name, tussenvoegsel, last_name, email FROM contacts WHERE id = ?");
         $contactStmt->execute([$bandContactId]);
-        $contact = $contactStmt->fetch();
+        $c = $contactStmt->fetch();
+        if (!$c) throw new Exception('Contact niet gevonden');
+        $bandContactName = buildFullName($c['first_name'], $c['tussenvoegsel'], $c['last_name']);
+        if (empty($bandContactName)) $bandContactName = $c['name'] ?? '';
+        $bandContactEmail = $c['email'] ?? '';
 
-        $boardMembersList = $pdo->query("SELECT DISTINCT u.id, u.username, u.email FROM users u JOIN user_roles ur ON ur.user_id = u.id WHERE ur.role = 'BESTUURSLID' AND u.deleted_at IS NULL AND u.status = 'ACTIVE' ORDER BY u.username")->fetchAll();
-        $boardMemberName = '';
-        foreach ($boardMembersList as $m) if ($m['id'] == $boardMemberId) { $boardMemberName = $m['username'] ?? ''; break; }
+        // Bestuurslid volledige naam
+        $bmStmt = $pdo->prepare("SELECT first_name, tussenvoegsel, last_name, username FROM users WHERE id = ?");
+        $bmStmt->execute([$boardMemberId]);
+        $bm = $bmStmt->fetch();
+        if (!$bm) throw new Exception('Bestuurslid niet gevonden');
+        $boardMemberFullName = buildFullName($bm['first_name'], $bm['tussenvoegsel'], $bm['last_name']);
+        if (empty($boardMemberFullName)) $boardMemberFullName = $bm['username'] ?? '';
 
         $contractNumber = 'KEY-CON-' . date('Ymd') . '-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
         $contractData = json_encode([
             'band_contact_id' => $bandContactId,
-            'band_contact_name' => $contact['name'] ?? '',
-            'band_contact_email' => $contact['email'] ?? '',
+            'band_contact_name' => $bandContactName,
+            'band_contact_email' => $bandContactEmail,
             'board_member_id' => $boardMemberId,
-            'board_member_name' => $boardMemberName,
+            'board_member_name' => $boardMemberFullName,
             'location' => $location,
             'start_date' => $startDate,
             'end_date' => $endDate,
-            'locker_no' => $lockerNo,
+            'locker_no' => $currentLockerNo ?? '',
             'key_code' => $row['key_code'],
             'key_description' => $row['description'],
             'custom_band_name' => $finalBandName,
@@ -436,7 +439,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_contract'])) {
 
         if ($existing) {
             $sql = "UPDATE key_contracts SET contract_number=?, band_contact_id=?, board_member_id=?, location=?, locker_no=?, contract_data=?, created_at=NOW()";
-            $params = [$contractNumber, $bandContactId, $boardMemberId, $location, $lockerNo, $contractData];
+            $params = [$contractNumber, $bandContactId, $boardMemberId, $location, $currentLockerNo ?? '', $contractData];
             if ($uploadedPdfBlob !== null) {
                 $sql .= ", contract_pdf=?, contract_pdf_name=?, contract_pdf_mime='application/pdf'";
                 array_push($params, $uploadedPdfBlob, $uploadedPdfName);
@@ -444,10 +447,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_contract'])) {
             $sql .= " WHERE key_id=?";
             $params[] = $id;
             $pdo->prepare($sql)->execute($params);
-            $msg = 'Contract bijgewerkt!';
         } else {
-            $pdo->prepare("INSERT INTO key_contracts (key_id, contract_number, band_contact_id, board_member_id, location, locker_no, contract_data, contract_pdf, contract_pdf_name, contract_pdf_mime, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,NOW())")->execute([$id, $contractNumber, $bandContactId, $boardMemberId, $location, $lockerNo, $contractData, $uploadedPdfBlob, $uploadedPdfName, $uploadedPdfBlob ? 'application/pdf' : null]);
-            $msg = 'Contract opgeslagen!';
+            $pdo->prepare("INSERT INTO key_contracts (key_id, contract_number, band_contact_id, board_member_id, location, locker_no, contract_data, contract_pdf, contract_pdf_name, contract_pdf_mime, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,NOW())")->execute([$id, $contractNumber, $bandContactId, $boardMemberId, $location, $currentLockerNo ?? '', $contractData, $uploadedPdfBlob, $uploadedPdfName, $uploadedPdfBlob ? 'application/pdf' : null]);
         }
         auditLog($pdo, 'CONTRACT_SAVED', 'key_id=' . $id);
         header("Location: /admin/contract_edit.php?id=$id&msg=saved");
@@ -456,10 +457,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_contract'])) {
 }
 
 $title = 'Sleutelcontract: ' . h($row['key_code']);
-// Bepaal de huidige waarde voor het bandveld (voor weergave in het formulier)
 $currentBandDropdownValue = 0;
 $currentCustomBandValue = $contractCustomBandName ?: 'Human Kind';
-// Als er een contract is, bekijk of het uit een bestaande band komt
 if ($existingContract && isset($existingContract['contract_data'])) {
     $data = json_decode($existingContract['contract_data'], true);
     if ($data && isset($data['band_id']) && $data['band_id'] > 0) {
@@ -545,12 +544,10 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
                 <div class="field">
                     <label>Band / Organisatie</label>
                     <?php if ($hasBand): ?>
-                        <!-- Als de sleutel aan een vaste band is gekoppeld, toon readonly -->
                         <input type="text" value="<?= h($currentBandName) ?>" readonly>
                         <input type="hidden" name="band_option" value="dropdown">
                         <input type="hidden" name="band_id_dropdown" value="<?= (int)$currentBandId ?>">
                     <?php else: ?>
-                        <!-- Keuze tussen dropdown of vrij veld -->
                         <select name="band_option" id="band_option" onchange="toggleBandInput()">
                             <option value="dropdown" <?= ($currentBandDropdownValue > 0 ? 'selected' : '') ?>>Kies een bestaande band</option>
                             <option value="custom" <?= ($currentBandDropdownValue == 0 && $currentCustomBandValue !== '' ? 'selected' : '') ?>>Andere (vrij invullen)</option>
@@ -584,14 +581,16 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
                     <label>Bestuurslid</label>
                     <select name="board_member_id" id="board_member_id" required>
                         <option value="">-- Kies bestuurslid --</option>
-                        <?php 
-                        $boardMembers = $pdo->query("SELECT DISTINCT u.id, u.username, u.email FROM users u JOIN user_roles ur ON ur.user_id = u.id WHERE ur.role = 'BESTUURSLID' AND u.deleted_at IS NULL AND u.status = 'ACTIVE' ORDER BY u.username")->fetchAll();
-                        foreach ($boardMembers as $m): ?>
-                            <option value="<?= $m['id'] ?>" <?= ($selectedBoardMemberId == $m['id']) ? 'selected' : '' ?>><?= h($m['username']) ?> <?= $m['email'] ? ' - '.h($m['email']) : '' ?></option>
+                        <?php foreach ($boardMembers as $m): ?>
+                            <option value="<?= $m['id'] ?>" <?= ($defaultBoardMemberId == $m['id']) ? 'selected' : '' ?>>
+                                <?= h(buildFullName($m['first_name'], $m['tussenvoegsel'], $m['last_name'])) ?: h($m['username']) ?>
+                                <?= $m['email'] ? ' - '.h($m['email']) : '' ?>
+                            </option>
                         <?php endforeach; ?>
                     </select>
                 </div>
             </div>
+
             <div class="row">
                 <div class="field"><label>Locatie</label><input type="text" name="location" value="<?= h($contractLocation) ?>" required></div>
             </div>
@@ -633,31 +632,60 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
 <script>
 function toggleBandInput() {
     const option = document.getElementById('band_option').value;
-    const dropdownDiv = document.getElementById('band_dropdown_div');
-    const customDiv = document.getElementById('band_custom_div');
-    if (option === 'dropdown') {
-        dropdownDiv.style.display = 'block';
-        customDiv.style.display = 'none';
+    document.getElementById('band_dropdown_div').style.display = (option === 'dropdown') ? 'block' : 'none';
+    document.getElementById('band_custom_div').style.display = (option === 'dropdown') ? 'none' : 'block';
+    updateContractContacts();
+}
+
+let selectedBandContactId = <?= (int)$selectedBandContactId ?>;
+
+function fillContactDropdown(contacts) {
+    const select = document.getElementById('band_contact_id');
+    select.innerHTML = '<option value="">-- Kies contactpersoon --</option>';
+    contacts.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = `${c.full_name || c.name}${c.email ? ' - ' + c.email : ''}`;
+        if (c.id == selectedBandContactId) opt.selected = true;
+        select.appendChild(opt);
+    });
+}
+
+async function loadContactsForBand(bandId) {
+    try {
+        const resp = await fetch(`/admin/contract_edit.php?action=get_contacts_for_band&band_id=${bandId}`);
+        fillContactDropdown(await resp.json());
+    } catch (e) { console.error(e); }
+}
+
+async function loadContactsWithoutBand() {
+    try {
+        const resp = await fetch('/admin/contract_edit.php?action=get_contacts_without_band');
+        fillContactDropdown(await resp.json());
+    } catch (e) { console.error(e); }
+}
+
+function updateContractContacts() {
+    const bandOption = document.getElementById('band_option');
+    if (!bandOption) {
+        <?php if ($hasBand): ?> loadContactsForBand(<?= (int)$currentBandId ?>); <?php endif; ?>
+        return;
+    }
+    if (bandOption.value === 'dropdown') {
+        const bandId = document.getElementById('band_id_dropdown')?.value || 0;
+        bandId > 0 ? loadContactsForBand(bandId) : fillContactDropdown([]);
     } else {
-        dropdownDiv.style.display = 'none';
-        customDiv.style.display = 'block';
+        loadContactsWithoutBand();
     }
 }
 
-let allContacts = [];
-fetch('/admin/contract_edit.php?action=get_all_contacts').then(r=>r.json()).then(d=>{allContacts=d; updateContractContacts();}).catch(console.error);
-
-function updateContractContacts() {
-    const bandContactSelect = document.getElementById('band_contact_id');
-    bandContactSelect.innerHTML = '<option value="">-- Kies contactpersoon --</option>';
-    allContacts.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.id;
-        opt.textContent = `${c.name}${c.email ? ' - ' + c.email : ''}`;
-        if (c.id == <?= (int)$selectedBandContactId ?>) opt.selected = true;
-        bandContactSelect.appendChild(opt);
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('band_id_dropdown')?.addEventListener('change', updateContractContacts);
+    document.getElementById('custom_band_name')?.addEventListener('input', () => {
+        if (document.getElementById('band_option')?.value === 'custom') updateContractContacts();
     });
-}
+    updateContractContacts();
+});
 
 window.generateContractPDF = function() {
     const bandContact = document.getElementById('band_contact_id')?.value;
@@ -666,41 +694,49 @@ window.generateContractPDF = function() {
     const start = document.querySelector('input[name="start_date"]')?.value;
     const end = document.querySelector('input[name="end_date"]')?.value;
     const lockerId = document.getElementById('contract_locker_id')?.value;
-    
-    // Bepaal bandnaam
+
     let bandName = '';
+    let bandIdDropdown = 0;
     const bandOption = document.getElementById('band_option');
-    if (bandOption && bandOption.value === 'dropdown') {
+
+    if (!bandOption) {
+        // $hasBand === true: band staat als hidden input
+        bandIdDropdown = document.querySelector('input[name="band_id_dropdown"]')?.value || 0;
+        bandName = document.querySelector('input[name="band_id_dropdown"]')
+            ?.closest('form')
+            ?.querySelector('input[type="text"][readonly]')?.value || '';
+    } else if (bandOption.value === 'dropdown') {
         const bandSelect = document.getElementById('band_id_dropdown');
-        const selectedBandId = bandSelect ? bandSelect.value : 0;
-        if (selectedBandId && selectedBandId > 0) {
-            // Zoek de bandnaam in de opties
-            const selectedOption = bandSelect.options[bandSelect.selectedIndex];
-            bandName = selectedOption ? selectedOption.text : '';
-        }
+        bandIdDropdown = bandSelect?.value || 0;
+        bandName = bandSelect?.selectedOptions[0]?.textContent || '';
     } else {
-        const customBandInput = document.getElementById('custom_band_name');
-        bandName = customBandInput ? customBandInput.value : '';
+        bandName = document.getElementById('custom_band_name')?.value || '';
     }
+
     if (!bandName) bandName = 'Human Kind';
 
-    if (!bandContact) { alert('Selecteer een contactpersoon.'); return; }
-    if (!boardMember) { alert('Selecteer een bestuurslid.'); return; }
-    if (!start || !end) { alert('Vul de ingangs- en einddatum in.'); return; }
+    if (!bandContact || !boardMember || !start || !end) {
+        alert('Vul alle verplichte velden in.');
+        return;
+    }
 
-    let url = `/admin/contract_edit.php?id=<?= $id ?>&preview_pdf=1&band_contact_id=${encodeURIComponent(bandContact)}&board_member_id=${encodeURIComponent(boardMember)}&location=${encodeURIComponent(location)}&start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}`;
+    let url = `/admin/contract_edit.php?id=<?= $id ?>&preview_pdf=1`
+        + `&band_contact_id=${encodeURIComponent(bandContact)}`
+        + `&board_member_id=${encodeURIComponent(boardMember)}`
+        + `&location=${encodeURIComponent(location)}`
+        + `&start_date=${encodeURIComponent(start)}`
+        + `&end_date=${encodeURIComponent(end)}`;
+
     if (lockerId) url += `&locker_id=${encodeURIComponent(lockerId)}`;
     url += `&custom_band_name=${encodeURIComponent(bandName)}`;
-    // Ook de dropdown band ID meesturen als die gekozen is
-    const bandOptionVal = document.getElementById('band_option') ? document.getElementById('band_option').value : 'custom';
-    if (bandOptionVal === 'dropdown') {
-        const bandId = document.getElementById('band_id_dropdown') ? document.getElementById('band_id_dropdown').value : 0;
-        if (bandId > 0) url += `&band_id_dropdown=${encodeURIComponent(bandId)}`;
+
+    if (bandIdDropdown > 0) {
+        url += `&band_id_dropdown=${encodeURIComponent(bandIdDropdown)}`;
     }
+
     window.open(url, '_blank', 'width=800,height=600,toolbar=yes,scrollbars=yes');
 };
 
-// Keep-alive
 function keepAlive() {
     fetch('/admin/keepalive.php', {method:'POST'}).then(r=>r.json()).then(d=>{
         if (d.status==='ok') { const b=document.getElementById('keepAliveBtn'); b.textContent='✅ Sessie actief'; setTimeout(()=>b.textContent='🔄 Verleng sessie',2000); }

@@ -1,6 +1,12 @@
 <?php
 declare(strict_types=1);
 
+/* register.php - Aanmelden voor een account
+ * - Gebruikers kunnen zich aanmelden met e‑mailadres en wachtwoord.
+ * - Na aanmelding ontvangen ze een e‑mail met een bevestigingslink.
+ * - Er wordt geen gebruikersnaam gevraagd; het e‑mailadres fungeert als loginnaam.
+*/
+
 require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/mail.php';
 
@@ -16,11 +22,6 @@ if (isLoggedIn()) {
 function h(?string $v): string
 {
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-}
-
-function makeToken(int $bytes = 32): string
-{
-    return rtrim(strtr(base64_encode(random_bytes($bytes)), '+/', '-_'), '=');
 }
 
 function mailLayout(string $title, string $intro, string $contentHtml): string
@@ -50,16 +51,13 @@ $success = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf($_POST['csrf'] ?? null);
 
-    $username  = trim((string)($_POST['username'] ?? ''));
+    // Alleen e‑mail en wachtwoord zijn verplicht
     $email     = strtolower(trim((string)($_POST['email'] ?? '')));
     $password  = (string)($_POST['password'] ?? '');
     $password2 = (string)($_POST['password2'] ?? '');
 
-    if ($username === '' || mb_strlen($username) < 3) {
-        $errors[] = 'Gebruikersnaam minimaal 3 tekens.';
-    }
     if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = 'Ongeldig e-mailadres.';
+        $errors[] = 'Ongeldig e‑mailadres.';
     }
     if ($password === '' || mb_strlen($password) < 10) {
         $errors[] = 'Wachtwoord minimaal 10 tekens.';
@@ -74,6 +72,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo->beginTransaction();
 
+            // Gebruik e‑mailadres als gebruikersnaam (username) voor backward compatibiliteit
+            $username = $email;
+
             $st = $pdo->prepare("
                 INSERT INTO users
                     (username, email, password_hash, role, status, active, created_at, updated_at)
@@ -83,45 +84,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $st->execute([$username, $email, $hash]);
             $uid = (int)$pdo->lastInsertId();
 
-            $token = makeToken();
+            // Token genereren (zelfde methode als in login.php voor consistentie)
+            $token = bin2hex(random_bytes(32));
             $tokenHash = password_hash($token, PASSWORD_DEFAULT);
             $exp = (new DateTime('+48 hours'))->format('Y-m-d H:i:s');
 
+            // Gebruik consistente kolomnamen: verification_token en verification_expires
             $pdo->prepare("
                 UPDATE users
-                SET verify_token_hash = ?, verify_expires_at = ?, updated_at = NOW()
+                SET verification_token = ?, verification_expires = ?, updated_at = NOW()
                 WHERE id = ?
             ")->execute([$tokenHash, $exp, $uid]);
 
             $pdo->commit();
 
-            $link = '/verify.php?' . http_build_query([
-                'token' => $token,
-                'email' => $email,
-            ]);
+            // Link bouwen met dezelfde volgorde als in login.php: email eerst, token daarna
+            $verifyLink = appUrl("/verify.php?email=" . urlencode($email) . "&token=" . $token);
 
-            $fullLink = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
-                . '://' . ($_SERVER['HTTP_HOST'] ?? '')
-                . $link;
-
+            // E‑mail zonder voornaam, dus algemene aanhef
             $html = mailLayout(
                 'Aanmelding ontvangen',
                 'Je accountaanvraag voor Porbeheer is goed ontvangen.',
                 '
-                <p style="margin:0 0 14px 0;">Hoi ' . h($username) . ',</p>
+                <p style="margin:0 0 14px 0;">Hoi,</p>
 
                 <p style="margin:0 0 14px 0;">
                   Je account is aangemaakt, maar nog niet actief.
                 </p>
 
                 <p style="margin:0 0 14px 0;">
-                  Stap 1: bevestig eerst je e-mailadres via onderstaande knop.
+                  Stap 1: bevestig eerst je e‑mailadres via onderstaande knop.
                   Deze link is <strong>48 uur geldig</strong>.
                 </p>
 
                 <p style="margin:18px 0;">
-                  <a href="' . h($fullLink) . '" style="display:inline-block;padding:12px 18px;background:#bf721f;border-radius:10px;color:#ffffff;text-decoration:none;font-weight:700;">
-                    E-mailadres bevestigen
+                  <a href="' . h($verifyLink) . '" style="display:inline-block;padding:12px 18px;background:#bf721f;border-radius:10px;color:#ffffff;text-decoration:none;font-weight:700;">
+                    E‑mailadres bevestigen
                   </a>
                 </p>
 
@@ -134,32 +132,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </p>
 
                 <p style="margin:0;">
-                  Heb jij dit niet aangevraagd? Dan kun je deze e-mail negeren.
+                  Heb jij dit niet aangevraagd? Dan kun je deze e‑mail negeren.
                 </p>
                 '
             );
 
-            sendEmail($email, 'Bevestig je aanmelding (Porbeheer)', $html);
+            // Gebruik dezelfde mailfunctie als in login.php (sendMail)
+            sendMail($email, 'Bevestig je aanmelding (Porbeheer)', $html);
 
             auditLog($pdo, 'REGISTER_OK', 'auth/register', [
-                'username' => $username,
                 'email'    => $email,
                 'user_id'  => $uid,
             ]);
 
-            $success = 'Aanmelding ontvangen. Controleer je e-mail en bevestig eerst je e-mailadres.';
+            $success = 'Aanmelding ontvangen. Controleer je e‑mail en bevestig eerst je e‑mailadres.';
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
 
             auditLog($pdo, 'REGISTER_FAIL', 'auth/register', [
-                'username' => $username,
                 'email'    => $email,
                 'error'    => substr($e->getMessage(), 0, 200),
             ]);
 
-            $errors[] = 'Aanmaken mislukt. Bestaat gebruikersnaam of e-mailadres al?';
+            $errors[] = 'Aanmaken mislukt. Bestaat dit e‑mailadres al?';
         }
     }
 }
@@ -263,11 +260,8 @@ a:hover{text-decoration:underline;filter:brightness(1.2);}
       <form method="post" autocomplete="off">
         <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
 
-        <label>Gebruikersnaam
-          <input name="username" required minlength="3" autocomplete="username">
-        </label>
-
-        <label>E-mail
+        <!-- Geen gebruikersnaam, alleen e‑mail -->
+        <label>E‑mail
           <input name="email" type="email" required autocomplete="email">
         </label>
 
@@ -292,7 +286,7 @@ a:hover{text-decoration:underline;filter:brightness(1.2);}
       <div class="flow">
         <div class="step">
           <div class="num">1</div>
-          <div><strong>E-mail bevestigen</strong> Je ontvangt een link om je e-mailadres te bevestigen.</div>
+          <div><strong>E‑mail bevestigen</strong> Je ontvangt een link om je e‑mailadres te bevestigen.</div>
         </div>
         <div class="step">
           <div class="num">2</div>
@@ -300,15 +294,15 @@ a:hover{text-decoration:underline;filter:brightness(1.2);}
         </div>
         <div class="step">
           <div class="num">3</div>
-          <div><strong>Eerste login</strong> Je logt in met gebruikersnaam en wachtwoord.</div>
+          <div><strong>Eerste login</strong> Je logt in met je e‑mailadres en wachtwoord.</div>
         </div>
         <div class="step">
           <div class="num">4</div>
-          <div><strong>2FA instellen</strong> Je koppelt een app op je telefoon en scant een QR-code.</div>
+          <div><strong>2FA instellen</strong> Je koppelt een authenticator-app op je telefoon en scant een QR-code.</div>
         </div>
         <div class="step">
           <div class="num">5</div>
-          <div><strong>Klaar</strong> Daarna kun je het systeem normaal gebruiken.</div>
+          <div><strong>Profiel aanvullen</strong> Na goedkeuring vul je je naam en 06‑nummer in.</div>
         </div>
       </div>
     </div>

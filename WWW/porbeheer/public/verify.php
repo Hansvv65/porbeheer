@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/* verify.php - verwerkt e-mailverificatie links. */
+/* verify.php - verwerkt e-mailverificatielinks */
 
 require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/mail.php';
@@ -12,7 +12,7 @@ header('Expires: 0');
 
 function h(?string $v): string
 {
-    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+    return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 }
 
 if (isLoggedIn()) {
@@ -23,84 +23,104 @@ if (isLoggedIn()) {
 $errors = [];
 $success = null;
 
-$email = strtolower(trim((string)($_GET['email'] ?? '')));
-$token = trim((string)($_GET['token'] ?? ''));
+$email = strtolower(trim((string) ($_GET['email'] ?? '')));
+$token = trim((string) ($_GET['token'] ?? ''));
 
 if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $token === '') {
     $errors[] = 'Ongeldige bevestigingslink.';
+    auditLog($pdo, 'EMAIL_VERIFY_INVALID', 'auth/verify', [
+        'email'  => $email,
+        'reason' => 'missing_data',
+    ]);
 } else {
     $st = $pdo->prepare("
-        SELECT id, username, status, approved_at, verify_token_hash, verify_expires_at, email_verified_at
+        SELECT id, username, status, approved_at, email_verified_at,
+               verification_token, verification_expires
         FROM users
         WHERE email = ?
         LIMIT 1
     ");
     $st->execute([$email]);
-    $u = $st->fetch(PDO::FETCH_ASSOC);
+    $user = $st->fetch(PDO::FETCH_ASSOC);
 
-    if (!$u) {
-        usleep(random_int(100000, 220000));
-
+    if (!$user) {
+        usleep(random_int(100000, 220000)); // timing-attack mitigatie
         $errors[] = 'Ongeldige bevestigingslink.';
         auditLog($pdo, 'EMAIL_VERIFY_INVALID', 'auth/verify', [
             'email'  => $email,
             'reason' => 'user_not_found',
         ]);
+    } elseif (!empty($user['email_verified_at'])) {
+        // al bevestigd
+        $success = (!empty($user['approved_at']) && $user['status'] === 'ACTIVE')
+            ? 'Je e‑mailadres is al bevestigd en je account is actief. Je kunt nu inloggen.'
+            : 'Je e‑mailadres is al bevestigd. Je account wacht op goedkeuring door de beheerder.';
+        auditLog($pdo, 'EMAIL_VERIFY_ALREADY_DONE', 'auth/verify', [
+            'email'   => $email,
+            'user_id' => (int) $user['id'],
+        ]);
     } else {
-        if (!empty($u['email_verified_at'])) {
-            if (!empty($u['approved_at']) && (string)$u['status'] === 'ACTIVE') {
-                $success = 'Je e-mailadres is bevestigd en je account is actief. Je kunt nu inloggen. Bij je eerste login stel je meteen 2FA in.';
-            } else {
-                $success = 'Je e-mailadres is bevestigd. Je account wacht nu nog op goedkeuring door de beheerder.';
-            }
+        // Token en expiry controleren
+        $tokenHash = (string) ($user['verification_token'] ?? '');
+        $expiresAt = (string) ($user['verification_expires'] ?? '');
 
-            auditLog($pdo, 'EMAIL_VERIFY_ALREADY_DONE', 'auth/verify', [
+        // Waterdichte expiry-validatie
+        $expired = false;
+        if ($expiresAt === '' || $expiresAt === '0000-00-00 00:00:00') {
+            $expired = true; // geen geldige datum
+        } else {
+            $expTs = strtotime($expiresAt);
+            if ($expTs === false || $expTs < time()) {
+                $expired = true;
+            }
+        }
+
+        if ($expired) {
+            $errors[] = 'De bevestigingslink is verlopen. Ga terug naar de inlogpagina en klik op "Bevestigingsmail opnieuw verzenden".';
+            auditLog($pdo, 'EMAIL_VERIFY_EXPIRED', 'auth/verify', [
+                'email'      => $email,
+                'user_id'    => (int) $user['id'],
+                'expires_at' => $expiresAt,
+            ]);
+        } elseif ($tokenHash === '' || !password_verify($token, $tokenHash)) {
+            usleep(random_int(100000, 220000));
+            $errors[] = 'Ongeldige bevestigingslink.';
+            auditLog($pdo, 'EMAIL_VERIFY_INVALID', 'auth/verify', [
                 'email'   => $email,
-                'user_id' => (int)$u['id'],
+                'user_id' => (int) $user['id'],
+                'reason'  => 'token_mismatch',
             ]);
         } else {
-            $exp  = (string)($u['verify_expires_at'] ?? '');
-            $hash = (string)($u['verify_token_hash'] ?? '');
-
-            if ($exp === '' || strtotime($exp) < time()) {
-                $errors[] = 'Bevestigingslink is verlopen. Meld je opnieuw aan.';
-
-                auditLog($pdo, 'EMAIL_VERIFY_EXPIRED', 'auth/verify', [
-                    'email'   => $email,
-                    'user_id' => (int)$u['id'],
-                ]);
-            } elseif ($hash === '' || !password_verify($token, $hash)) {
-                usleep(random_int(100000, 220000));
-
-                $errors[] = 'Ongeldige bevestigingslink.';
-
-                auditLog($pdo, 'EMAIL_VERIFY_INVALID', 'auth/verify', [
-                    'email'   => $email,
-                    'user_id' => (int)$u['id'],
-                    'reason'  => 'token_mismatch',
-                ]);
-            } else {
-                $pdo->prepare("
+            // Alles correct – markeer als bevestigd en wis token
+            $pdo->beginTransaction();
+            try {
+                $update = $pdo->prepare("
                     UPDATE users
                     SET email_verified_at = NOW(),
-                        verify_token_hash = NULL,
-                        verify_expires_at = NULL,
+                        verification_token = NULL,
+                        verification_expires = NULL,
                         updated_at = NOW()
                     WHERE id = ?
-                ")->execute([
-                    (int)$u['id']
-                ]);
+                ");
+                $update->execute([(int) $user['id']]);
+                $pdo->commit();
 
                 auditLog($pdo, 'EMAIL_VERIFY_OK', 'auth/verify', [
                     'email'   => $email,
-                    'user_id' => (int)$u['id'],
+                    'user_id' => (int) $user['id'],
                 ]);
 
-                if (!empty($u['approved_at']) && (string)$u['status'] === 'ACTIVE') {
-                    $success = 'Je e-mailadres is bevestigd en je account is actief. Je kunt nu inloggen. Bij je eerste login stel je meteen 2FA in.';
-                } else {
-                    $success = 'Je e-mailadres is bevestigd. Je account wacht nu nog op goedkeuring door de beheerder.';
-                }
+                $success = (!empty($user['approved_at']) && $user['status'] === 'ACTIVE')
+                    ? 'Je e‑mailadres is bevestigd en je account is actief. Je kunt nu inloggen.'
+                    : 'Je e‑mailadres is bevestigd. Je account wacht op goedkeuring door de beheerder.';
+            } catch (PDOException $e) {
+                $pdo->rollBack();
+                $errors[] = 'Er is een fout opgetreden bij het bevestigen. Probeer het later opnieuw.';
+                auditLog($pdo, 'EMAIL_VERIFY_DB_ERROR', 'auth/verify', [
+                    'email'   => $email,
+                    'user_id' => (int) $user['id'],
+                    'error'   => $e->getMessage(),
+                ]);
             }
         }
     }
