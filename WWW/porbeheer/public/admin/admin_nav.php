@@ -11,7 +11,6 @@ if (!function_exists('currentUser')) {
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
-$bg = themeImage('admin', $pdo);
 
 function hnav($v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
