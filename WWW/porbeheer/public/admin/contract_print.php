@@ -227,7 +227,9 @@ try {
     $options = new Options();
     $options->set('defaultFont', 'Helvetica');
     $options->set('isHtml5ParserEnabled', true);
-    $options->set('isRemoteEnabled', false);
+    // QR wordt als data:-URI ingesloten; DomPDF heeft een schrijfbare temp-map
+    // nodig en moet data:-URI's toestaan (zie helper in contract_lib.php).
+    contractApplyDompdfImageOptions($options);
 
     $dompdf = new Dompdf($options);
     $dompdf->loadHtml($html);

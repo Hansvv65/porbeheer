@@ -20,9 +20,10 @@ $tiles = [
     ['title'=>'Sleutels en Kasten',  'href'=>'/admin/keys.php',       'roles'=>['ADMIN','BEHEER']],
     ['title'=>'Financiën',           'href'=>'/admin/finance.php',    'roles'=>['ADMIN','FINANCIEEL']],
     ['title'=>'Contacten',           'href'=>'/admin/contacts.php',   'roles'=>['ADMIN','BEHEER','FINANCIEEL']],
-  /*  ['title'=>'Bestuurszaken',       'href'=>'/admin/board.php',      'roles'=>['ADMIN','BESTUURSLID']],*/
+    /*['title'=>'Bestuurszaken',     'href'=>'/admin/board.php',      'roles'=>['ADMIN','BESTUURSLID']],*/
     ['title'=>'Admin',               'href'=>'/admin/beheer.php',     'roles'=>['ADMIN']],
-    ['title'=>'Help',                'href'=>'/admin/help.php',       'roles'=>['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID']],
+    ['title'=>'Help',                'href'=>'/assets/Handleiding_B.pdf', 'target'=>'_blank', 'roles'=>['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID']],
+    /*['title'=>'Help',              'href'=>'/admin/help.php',       'roles'=>['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID']],*/
     ['title'=>'Uitloggen',           'href'=>'/logout.php',           'roles'=>['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID']],
 ];
 
@@ -300,8 +301,9 @@ function h(?string $v): string {
                     $allowed = allowedTile($tile, $userRoles);
                     $cls = $allowed ? 'tile' : 'tile disabled';
                     $href = $allowed ? $tile['href'] : '#';
+                    $target = ($allowed && !empty($tile['target'])) ? ' target="' . h($tile['target']) . '"' : '';
                     ?>
-                    <a class="<?= $cls ?>" href="<?= h($href) ?>">
+                    <a class="<?= $cls ?>" href="<?= h($href) ?>" <?= $target ?>>
                         <?= h($tile['title']) ?>
                     </a>
                 <?php endforeach; ?>

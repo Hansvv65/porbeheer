@@ -25,7 +25,7 @@ $getSecret = static function (string $key, mixed $default = '') use ($secrets): 
 $config = [
     'app' => [
         'name'            => 'PorBeheer',
-        'version'         => '3.0.0',
+        'version'         => '3.1.1',
         'timezone'        => 'Europe/Amsterdam',
         'banner_enabled'  => true,
         'banner_envs'     => ['demo', 'development'],
@@ -113,8 +113,8 @@ foreach ($config['app']['env_detection']['development_hosts'] as $devHost) {
     }
 }
 
-// Bepaal de session idle timeout (1200 voor development, anders 300)
-$sessionIdleTimeout = $isDevelopment ? 1200 : 300;
+// Bepaal de session idle timeout (1800 voor development, anders 900)
+$sessionIdleTimeout = $isDevelopment ? 1800 : 900;
 
 // Voeg de security configuratie toe
 $config['security'] = [

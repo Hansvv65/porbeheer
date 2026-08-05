@@ -912,6 +912,9 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
 
 <script>
 const CSRF = <?= json_encode(csrfToken()) ?>;
+const HAS_FIXED_BAND = <?= $hasBand ? 'true' : 'false' ?>;
+const FIXED_BAND_NAME = <?= json_encode($hasBand ? (string)$currentBandName : '') ?>;
+const FIXED_BAND_ID   = <?= (int)($hasBand ? (int)$currentBandId : 0) ?>;
 let qrContractId = null;
 
 function toggleBandInput() {
@@ -971,24 +974,27 @@ window.generateContractPDF = function() {
     const lockerId = document.getElementById('contract_locker_id')?.value;
 
     let bandName = '';
-    const bandOption = document.getElementById('band_option');
-    if (bandOption && bandOption.value === 'dropdown') {
-        const bandSelect = document.getElementById('band_id_dropdown');
-        bandName = bandSelect?.selectedOptions[0]?.textContent || '';
+    let bandIdForUrl = 0;
+    if (HAS_FIXED_BAND) {
+        bandName = FIXED_BAND_NAME;
+        bandIdForUrl = FIXED_BAND_ID;
     } else {
-        bandName = document.getElementById('custom_band_name')?.value || '';
+        const bandOption = document.getElementById('band_option');
+        if (bandOption && bandOption.value === 'dropdown') {
+            const bandSelect = document.getElementById('band_id_dropdown');
+            bandName = (bandSelect?.selectedOptions[0]?.textContent || '').trim();
+            bandIdForUrl = parseInt(bandSelect?.value || '0', 10) || 0;
+        } else {
+            bandName = document.getElementById('custom_band_name')?.value || '';
+        }
     }
-    if (!bandName) bandName = 'Human Kind';
 
     if (!bandContact || !boardMember || !start) { alert('Vul alle verplichte velden in.'); return; }
 
     let url = `/admin/contract_edit.php?id=<?= $id ?>&preview_pdf=1&band_contact_id=${encodeURIComponent(bandContact)}&board_member_id=${encodeURIComponent(boardMember)}&location=${encodeURIComponent(location)}&start_date=${encodeURIComponent(start)}`;
     if (lockerId) url += `&locker_id=${encodeURIComponent(lockerId)}`;
-    url += `&custom_band_name=${encodeURIComponent(bandName)}`;
-    if (bandOption && bandOption.value === 'dropdown') {
-        const bandId = document.getElementById('band_id_dropdown')?.value || 0;
-        if (bandId > 0) url += `&band_id_dropdown=${encodeURIComponent(bandId)}`;
-    }
+    if (bandName) url += `&custom_band_name=${encodeURIComponent(bandName)}`;
+    if (bandIdForUrl > 0) url += `&band_id_dropdown=${encodeURIComponent(bandIdForUrl)}`;
     window.open(url, '_blank', 'width=800,height=600,toolbar=yes,scrollbars=yes');
 };
 

@@ -140,6 +140,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Gebruik dezelfde mailfunctie als in login.php (sendMail)
             sendMail($email, 'Bevestig je aanmelding (Porbeheer)', $html);
 
+            // Beheerder informeren over de nieuwe aanmelding, zodat deze goedgekeurd kan worden.
+            // Onderwerp bevat alarm-emoji's zodat de mail opvalt in de inbox.
+            try {
+                $adminHtml = mailLayout(
+                    'Nieuwe aanmelding',
+                    'Er heeft zich zojuist iemand aangemeld voor Porbeheer.',
+                    '
+                    <p style="margin:0 0 14px 0;">Hoi,</p>
+
+                    <p style="margin:0 0 14px 0;">
+                      Er is een nieuwe accountaanvraag binnengekomen:
+                    </p>
+
+                    <p style="margin:0 0 14px 0;">
+                      <strong>E‑mail:</strong> ' . h($email) . '<br>
+                      <strong>Aangevraagd op:</strong> ' . h((new DateTime())->format('d-m-Y H:i')) . '
+                    </p>
+
+                    <p style="margin:0 0 14px 0;">
+                      Het account staat op status <strong>PENDING</strong> en wacht nog op jouw goedkeuring
+                      (de gebruiker moet eerst zelf nog het e‑mailadres bevestigen).
+                    </p>
+                    '
+                );
+
+                sendMail(
+                    'hansvv@gmail.com',
+                    '🚨🚨 Nieuwe aanmelding Porbeheer – goedkeuring vereist 🚨🚨',
+                    $adminHtml
+                );
+            } catch (Throwable $e) {
+                // Het mislukken van deze notificatie mag de aanmelding van de gebruiker niet blokkeren.
+                auditLog($pdo, 'REGISTER_ADMIN_NOTIFY_FAIL', 'auth/register', [
+                    'email' => $email,
+                    'error' => substr($e->getMessage(), 0, 200),
+                ]);
+            }
+
             auditLog($pdo, 'REGISTER_OK', 'auth/register', [
                 'email'    => $email,
                 'user_id'  => $uid,
