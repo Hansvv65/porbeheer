@@ -324,15 +324,14 @@ try {
       <h1>Bands</h1>
       <div class="sub">
         <a href="/admin/band_keys.php">Sleutels en Kasten</a>
-        <?php if (in_array($role, ['ADMIN','BEHEER'], true)): ?>
-          • <a href="/admin/band_edit.php">Nieuwe Band</a>
+        <?php if (in_array($role, ['ADMIN','BEHEER'], true)): ?> <a href="/admin/band_edit.php">Nieuwe Band</a>
         <?php endif; ?>
       </div>
     </div>
 
     <div class="userbox">
       <div class="line1"><?= h($user['username'] ?? '') ?> · <?= h($role) ?></div>
-      <div class="line2"><a href="/admin/dashboard.php">Dashboard</a> • <a href="/logout.php">Uitloggen</a></div>
+      <div class="line2"><a href="/admin/dashboard.php">Dashboard</a> <a href="/logout.php">Uitloggen</a></div>
     </div>
   </div>
 

@@ -515,15 +515,13 @@ a:hover{ opacity:.95; }
   <div class="wrap">
     <div class="topbar">
       <div class="brand">
-        <h1>Porbeheer</h1>
+        <h1><a href="/admin/dashboard.php">Porbeheer</a></h1>
         <div class="sub">POP Oefenruimte Zevenaar • admin</div>
       </div>
       <div class="userbox">
         <div class="line1">Ingelogd: <?= h($user['username'] ?? '') ?> • Rol: <?= h($role) ?></div>
         <div class="line2">
-          <a href="/admin/dashboard.php">Dashboard</a> •
-          <a href="/admin/beheer.php">Beheer</a> •
-          <a href="/admin/users.php">Gebruikers</a>
+          <a href="/admin/dashboard.php">Dashboard</a> <a href="/admin/beheer.php">Beheer</a> <a href="/admin/users.php">Gebruikers</a>
         </div>
       </div>
     </div>

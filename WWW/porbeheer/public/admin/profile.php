@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
+include __DIR__ . '/../assets/includes/header.php';
 
 // Alleen ingelogde gebruikers met status ACTIVE mogen hier komen
 if (!isLoggedIn()) {

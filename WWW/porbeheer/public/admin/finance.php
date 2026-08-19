@@ -262,7 +262,7 @@ option{ color:#000; }
     <div class="wrap">
       <div class="topbar">
         <div class="brand">
-          <h1>Porbeheer</h1>
+          <h1><a href="/admin/dashboard.php">Porbeheer</a></h1>
           <div class="sub">POP Oefenruimte Zevenaar • financiën</div>
         </div>
 

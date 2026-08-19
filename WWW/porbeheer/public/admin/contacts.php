@@ -82,16 +82,14 @@ th{background:rgba(255,255,255,.05)}
  <div class="brand">
    <h1>Contacten</h1>
    <div class="sub">
-     <a href="/admin/dashboard.php">Dashboard</a> ·
-     <a href="/admin/contact_edit.php">Nieuw contact</a>
+     <a href="/admin/dashboard.php">Dashboard</a> <a href="/admin/contact_edit.php">Nieuw contact</a>
    </div>
  </div>
 
  <div class="userbox">
     <div class="line1">Ingelogd: <?= h($user['username'] ?? '') ?> • Rol: <?= h((string)$role) ?></div>
     <div class="line2">
-      <a href="/admin/dashboard.php">Dashboard</a> •
-      <a href="/logout.php">Uitloggen</a>
+      <a href="/admin/dashboard.php">Dashboard</a> <a href="/logout.php">Uitloggen</a>
     </div>
  </div>
 </div>

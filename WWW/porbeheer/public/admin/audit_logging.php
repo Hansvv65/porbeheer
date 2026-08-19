@@ -276,16 +276,14 @@ pre{
     <div class="wrap">
       <div class="topbar">
         <div class="brand">
-          <h1>Porbeheer</h1>
+          <h1><a href="/admin/dashboard.php">Porbeheer</a></h1>
           <div class="sub">Audit logging • beheer & planning</div>
         </div>
 
         <div class="userbox">
           <div class="line1">Ingelogd: <?= h($user['username'] ?? '') ?> • Rol: <?= h((string)$role) ?></div>
           <div class="line2">
-            <a href="/admin/beheer.php">Beheer</a> •
-            <a href="/admin/dashboard.php">Dashboard</a> •
-            <a href="/logout.php">Uitloggen</a>
+            <a href="/admin/beheer.php">Beheer</a> <a href="/admin/dashboard.php">Dashboard</a> <a href="/logout.php">Uitloggen</a>
           </div>
         </div>
       </div>

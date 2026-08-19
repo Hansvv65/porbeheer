@@ -28,6 +28,7 @@ for ($__i = 0; $__i < 8; $__i++) {
 if ($__bs === null) { $__bs = __DIR__ . '/../../libs/porbeheer/app/bootstrap.php'; }
 require_once $__bs;
 require_once PROJECT_ROOT . '/app/contract_lib.php';
+include __DIR__ . '/assets/includes/header.php';
 
 // Geen requireRole / requireLogin: dit is een publieke, token-beveiligde pagina.
 

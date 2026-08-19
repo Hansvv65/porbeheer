@@ -335,7 +335,7 @@ color:#fff2de;
 
   <div class="userbox">
     <div class="line1"><?= h($user['username'] ?? '') ?> · <?= h($role) ?></div>
-    <div class="line2"><a href="/admin/dashboard.php">Dashboard</a> • <a href="/logout.php">Uitloggen</a></div>
+    <div class="line2"><a href="/admin/dashboard.php">Dashboard</a> <a href="/logout.php">Uitloggen</a></div>
   </div>
 </div>
 

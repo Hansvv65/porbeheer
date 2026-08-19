@@ -191,7 +191,7 @@ input[type="password"]{
 
     <div class="topbar">
       <div class="brand">
-        <h1>Porbeheer</h1>
+        <h1><a href="/admin/dashboard.php">Porbeheer</a></h1>
         <div class="sub">Mijn account</div>
       </div>
 

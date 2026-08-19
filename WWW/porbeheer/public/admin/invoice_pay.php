@@ -115,7 +115,7 @@ option{color:#000}
 <div class="backdrop">
   <div class="wrap">
     <div class="topbar">
-      <div class="brand"><h1>Porbeheer</h1><div class="sub">POP Oefenruimte Zevenaar • factuur betalen</div></div>
+      <div class="brand"><h1><a href="/admin/dashboard.php">Porbeheer</a></h1><div class="sub">POP Oefenruimte Zevenaar • factuur betalen</div></div>
       <div class="userbox">
         <div class="line1">Hallo <?= h($user['username'] ?? '') ?> · rol <?= h($role) ?></div>
         <div class="line2"><a href="/admin/invoices.php">Facturen</a><a href="/admin/finance.php">Financiën</a><a href="/logout.php">Uitloggen</a></div>

@@ -161,7 +161,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
     <div class="wrap">
         <div class="topbar">
             <div class="brand">
-                <h1>Porbeheer</h1>
+                <h1><a href="/admin/dashboard.php">Porbeheer</a></h1>
                 <div class="sub">POP Oefenruimte Zevenaar • beheer & planning</div>
             </div>
 
@@ -181,8 +181,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
 
                 <div class="line2">
                     <div class="navleft">
-                        <a href="/admin/dashboard.php">Dashboard</a> •
-                        <a href="/logout.php">Uitloggen</a>
+                        <a href="/admin/dashboard.php">Dashboard</a> <a href="/logout.php">Uitloggen</a>
                     </div>
 
                     <div class="navright">

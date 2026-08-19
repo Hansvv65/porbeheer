@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
+include __DIR__ . '/assets/includes/header.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/mail.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');

@@ -207,7 +207,7 @@ a{color:#fff;text-decoration:none}
 
     <div class="topbar">
       <div class="brand">
-        <h1>Porbeheer</h1>
+        <h1><a href="/admin/dashboard.php">Porbeheer</a></h1>
         <div class="sub">POP Oefenruimte Zevenaar • changelog</div>
       </div>
 
@@ -218,8 +218,7 @@ a{color:#fff;text-decoration:none}
 
         <div class="line2">
           <span>
-            <a href="/admin/dashboard.php">Dashboard</a> •
-            <a href="/logout.php">Uitloggen</a>
+            <a href="/admin/dashboard.php">Dashboard</a> <a href="/logout.php">Uitloggen</a>
           </span>
 
           <a href="/changelog.php">v<?= h($appVersion) ?></a>

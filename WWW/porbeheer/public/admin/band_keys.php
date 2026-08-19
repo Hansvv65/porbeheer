@@ -330,7 +330,7 @@ function toggleKeyOptions(){
     </div>
     <div class="userbox">
       <div class="line1">Ingelogd: <?= h($user['username'] ?? '') ?> • Rol: <?= h((string)$role) ?></div>
-      <div class="line2"><a href="/admin/bands.php">Bands</a> • <a href="/admin/keys.php">Sleutels</a> • <a href="/admin/dashboard.php">Dashboard</a></div>
+      <div class="line2"><a href="/admin/bands.php">Bands</a> <a href="/admin/keys.php">Sleutels</a> <a href="/admin/dashboard.php">Dashboard</a></div>
     </div>
   </div>
 
