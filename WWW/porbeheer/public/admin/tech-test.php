@@ -189,6 +189,137 @@ if (isset($_GET['action']) && $_GET['action'] === 'dompdf_test') {
     }
 }
 
+// ===== 2FA / QR-CODE TEST (sessiegebonden, raakt nooit een echt gebruikersaccount) =====
+// Vervangt de losse test-2fa.php / test-2fa-offline.php / test-2fa-verify.php / test-2fa-all.php,
+// die stuk voor stuk kapot waren (ontbrekende <?php-tag, of een niet-bestaande App\Qr\QrSvgProvider
+// klasse) en zonder authenticatie bereikbaar waren. Gebruikt dezelfde buildTwoFactorAuth() als de
+// echte 2FA-instelpagina (setup-2fa.php), dus bewezen werkende QR-opwekking.
+$twofaMessage = '';
+$twofaMessageType = 'info';
+$twofaResult = null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['tech_action'] ?? '') === '2fa_generate') {
+    requireCsrf($_POST['csrf'] ?? '');
+    $tfa = buildTwoFactorAuth();
+    $_SESSION['tech_test_2fa_secret'] = $tfa->createSecret();
+    auditLog($pdo, 'TEST', 'techtest_2fa_generate', ['username' => $user['username'] ?? '']);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['tech_action'] ?? '') === '2fa_reset') {
+    requireCsrf($_POST['csrf'] ?? '');
+    unset($_SESSION['tech_test_2fa_secret']);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['tech_action'] ?? '') === '2fa_verify') {
+    requireCsrf($_POST['csrf'] ?? '');
+    $secret = (string)($_SESSION['tech_test_2fa_secret'] ?? '');
+    $code = trim((string)($_POST['code'] ?? ''));
+    if ($secret === '') {
+        $twofaMessage = 'Genereer eerst een testsleutel.';
+        $twofaMessageType = 'error';
+    } elseif ($code === '') {
+        $twofaMessage = 'Vul een code uit de authenticator app in.';
+        $twofaMessageType = 'error';
+    } else {
+        $tfa = buildTwoFactorAuth();
+        $twofaResult = $tfa->verifyCode($secret, $code, 2);
+        $twofaMessage = $twofaResult ? 'Code correct.' : 'Code niet geldig.';
+        $twofaMessageType = $twofaResult ? 'success' : 'error';
+        auditLog($pdo, $twofaResult ? 'TEST_SUCCESS' : 'TEST_FAIL', 'techtest_2fa_verify', [
+            'username' => $user['username'] ?? '',
+            'result' => $twofaResult ? 'ok' : 'bad',
+        ]);
+    }
+}
+
+$twofaSecret = (string)($_SESSION['tech_test_2fa_secret'] ?? '');
+$twofaHasSecret = ($twofaSecret !== '');
+$twofaQrDataUri = '';
+if ($twofaHasSecret) {
+    try {
+        $tfa = buildTwoFactorAuth();
+        $twofaQrDataUri = $tfa->getQRCodeImageAsDataUri('techtest@porbeheer', $twofaSecret);
+    } catch (Throwable $e) {
+        $twofaMessage = 'QR-code kon niet gegenereerd worden: ' . $e->getMessage();
+        $twofaMessageType = 'error';
+    }
+}
+
+// ===== E-MAILTEST (SMTP debug) =====
+// Vervangt de losse test-email.php, die o.a. een niet-bestaand pad (../cgi-bin/app/config.php)
+// gebruikte. Gebruikt hetzelfde $GLOBALS['config'] als de rest van de app (zie ook mail.php).
+$emailErrors = [];
+$emailSuccess = null;
+$emailDebugLog = '';
+$mailCfg   = $GLOBALS['config']['mail'] ?? [];
+$smtpHost  = (string)($mailCfg['smtp_host'] ?? '');
+$smtpPort  = (int)($mailCfg['smtp_port'] ?? 587);
+$smtpUser  = (string)($mailCfg['smtp_user'] ?? '');
+$smtpPass  = (string)($mailCfg['smtp_pass'] ?? '');
+$fromEmail = (string)($mailCfg['from_email'] ?? $smtpUser);
+$fromName  = (string)($mailCfg['from_name'] ?? 'Administratie Porbeheer');
+
+$emailTo      = (string)($_POST['to'] ?? '');
+$emailSubject = (string)($_POST['subject'] ?? 'Testmail porbeheer');
+$emailBody    = (string)($_POST['message'] ?? "Dit is een testmail vanuit de tech-test pagina.\n\nGroet,\nporbeheer");
+$emailShowDebug = isset($_POST['show_debug']);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['tech_action'] ?? '') === 'email_send') {
+    requireCsrf($_POST['csrf'] ?? '');
+
+    $emailTo = trim($emailTo);
+    $emailSubject = trim($emailSubject);
+    $emailBody = trim($emailBody);
+
+    if ($smtpUser === '' || $smtpPass === '') {
+        $emailErrors[] = 'SMTP-configuratie ontbreekt (smtp_user/smtp_pass).';
+    }
+    if ($emailTo === '' || !filter_var($emailTo, FILTER_VALIDATE_EMAIL)) {
+        $emailErrors[] = 'Ongeldig e-mailadres bij ontvanger.';
+    }
+    if ($emailSubject === '') $emailErrors[] = 'Onderwerp is verplicht.';
+    if ($emailBody === '') $emailErrors[] = 'Bericht is verplicht.';
+
+    if (!$emailErrors) {
+        $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+        try {
+            $mail->isSMTP();
+            $mail->Host     = $smtpHost;
+            $mail->Port     = $smtpPort;
+            $mail->SMTPAuth = true;
+            $mail->Username = $smtpUser;
+            $mail->Password = $smtpPass;
+            $mail->SMTPSecure = ($smtpPort === 465)
+                ? \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS
+                : \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->CharSet = 'UTF-8';
+            $mail->setFrom($fromEmail, $fromName);
+            $mail->addAddress($emailTo);
+            $mail->Subject = $emailSubject;
+            $mail->isHTML(true);
+            $mail->Body    = '<p>' . nl2br(h($emailBody)) . '</p>';
+            $mail->AltBody = $emailBody;
+
+            if ($emailShowDebug) {
+                $mail->SMTPDebug = 2;
+                $mail->Debugoutput = function ($str, $level) use (&$emailDebugLog) {
+                    $emailDebugLog .= rtrim((string)$str) . "\n";
+                };
+            }
+
+            $mail->send();
+            auditLog($pdo, 'TEST_SUCCESS', 'techtest_email_sent', ['to' => $emailTo, 'subject' => $emailSubject]);
+            $emailSuccess = 'Testmail verzonden naar ' . $emailTo;
+        } catch (Throwable $e) {
+            $emailErrors[] = 'Fout: ' . $e->getMessage();
+            if (isset($mail) && $mail instanceof \PHPMailer\PHPMailer\PHPMailer) {
+                $emailErrors[] = 'PHPMailer ErrorInfo: ' . $mail->ErrorInfo;
+            }
+            auditLog($pdo, 'TEST_FAIL', 'techtest_email_failed', ['to' => $emailTo, 'error' => implode(' | ', $emailErrors)]);
+        }
+    }
+}
+
 // ===== VERDER MET DE NORMALE TECH-TEST PAGINA =====
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -266,18 +397,13 @@ try {
 $tests = [
     [
         'title' => 'E-mail test',
-        'url'   => '/admin/test-email.php',
+        'url'   => '#email-test',
         'desc'  => 'Controle van SMTP / verzenden van testmail.',
     ],
     [
-        'title' => '2FA test (basis)',
-        'url'   => '/admin/test-2fa.php',
-        'desc'  => 'Basis test voor secret en QR via huidige 2FA-opzet.',
-    ],
-    [
-        'title' => '2FA test (offline QR)',
-        'url'   => '/admin/test-2fa-all.php',
-        'desc'  => 'Offline QR-generatie met RobThree + Bacon QR.',
+        'title' => '2FA / QR-code test',
+        'url'   => '#tfa-test',
+        'desc'  => 'Sleutel genereren, QR tonen en code verifiëren — los van echte gebruikersaccounts.',
     ],
     [
         'title' => 'DomPDF test (PDF genereren)',
@@ -496,6 +622,73 @@ $tests = [
           <?php endif; ?>
         </div>
       </div>
+    </div>
+
+    <div class="card" id="tfa-test" style="grid-column:1/-1;">
+      <h3>2FA / QR-code test</h3>
+      <p class="muted">Genereert een tijdelijke testsleutel (alleen in je sessie, geen echt gebruikersaccount wordt aangeraakt) en laat je die verifiëren met een authenticator app.</p>
+      <?php if ($twofaMessage !== ''): ?>
+        <p class="<?= $twofaMessageType === 'success' ? 'ok' : ($twofaMessageType === 'error' ? 'no' : '') ?>"><?= h($twofaMessage) ?></p>
+      <?php endif; ?>
+      <form method="post" style="display:inline-block;margin-right:10px;">
+        <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
+        <input type="hidden" name="tech_action" value="2fa_generate">
+        <button type="submit" class="testlink" style="display:inline-block;"><?= $twofaHasSecret ? 'Nieuwe testsleutel genereren' : 'Testsleutel genereren' ?></button>
+      </form>
+      <?php if ($twofaHasSecret): ?>
+        <form method="post" style="display:inline-block;">
+          <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
+          <input type="hidden" name="tech_action" value="2fa_reset">
+          <button type="submit" class="testlink" style="display:inline-block;">Testsleutel wissen</button>
+        </form>
+        <div class="kv" style="margin-top:14px;">
+          <div>Secret</div><div><?= h(chunk_split($twofaSecret, 4, ' ')) ?></div>
+        </div>
+        <?php if ($twofaQrDataUri !== ''): ?>
+          <p style="margin-top:10px;"><img src="<?= h($twofaQrDataUri) ?>" alt="QR code" style="background:#fff;border:1px solid #e5e7eb;padding:10px;"></p>
+        <?php endif; ?>
+        <form method="post" style="margin-top:10px;max-width:320px;">
+          <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
+          <input type="hidden" name="tech_action" value="2fa_verify">
+          <label for="tfa_code">Code uit authenticator</label><br>
+          <input type="text" name="code" id="tfa_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="font-size:18px;padding:8px;width:140px;">
+          <button type="submit" class="testlink" style="display:inline-block;">Controleer</button>
+        </form>
+      <?php endif; ?>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card" id="email-test" style="grid-column:1/-1;">
+      <h3>E-mail test (SMTP debug)</h3>
+      <p class="muted">Verstuurt een echte testmail via de geconfigureerde SMTP-server. Toont desgewenst het exacte SMTP-antwoord.</p>
+      <div class="kv" style="margin-bottom:12px;">
+        <div>SMTP host</div><div><?= h($smtpHost) ?></div>
+        <div>SMTP poort</div><div><?= h((string)$smtpPort) ?></div>
+        <div>SMTP user</div><div><?= h($smtpUser !== '' ? maskValue($smtpUser, 4) : '(leeg)') ?></div>
+        <div>From</div><div><?= h($fromEmail) ?> (<?= h($fromName) ?>)</div>
+      </div>
+      <?php if ($emailErrors): ?>
+        <div class="no"><?php foreach ($emailErrors as $e): ?><div><?= h($e) ?></div><?php endforeach; ?></div>
+      <?php endif; ?>
+      <?php if ($emailSuccess): ?>
+        <div class="ok"><?= h($emailSuccess) ?></div>
+      <?php endif; ?>
+      <form method="post" style="max-width:480px;">
+        <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
+        <input type="hidden" name="tech_action" value="email_send">
+        <label for="mail_to">Ontvanger</label><br>
+        <input type="email" name="to" id="mail_to" value="<?= h($emailTo) ?>" required style="width:100%;padding:8px;margin-bottom:8px;"><br>
+        <label for="mail_subject">Onderwerp</label><br>
+        <input type="text" name="subject" id="mail_subject" value="<?= h($emailSubject) ?>" required style="width:100%;padding:8px;margin-bottom:8px;"><br>
+        <label for="mail_body">Bericht</label><br>
+        <textarea name="message" id="mail_body" required style="width:100%;padding:8px;min-height:100px;margin-bottom:8px;"><?= h($emailBody) ?></textarea><br>
+        <label><input type="checkbox" name="show_debug" <?= $emailShowDebug ? 'checked' : '' ?>> Toon SMTP debug</label><br><br>
+        <button type="submit" class="testlink" style="display:inline-block;">Verstuur testmail</button>
+      </form>
+      <?php if ($emailShowDebug && $emailDebugLog !== ''): ?>
+        <pre style="background:#0b1020;color:#e8eefc;padding:12px;border-radius:10px;overflow:auto;max-height:320px;margin-top:12px;"><?= h($emailDebugLog) ?></pre>
+      <?php endif; ?>
     </div>
 
     <div class="card">

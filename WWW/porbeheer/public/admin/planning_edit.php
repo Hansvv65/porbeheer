@@ -24,9 +24,6 @@ $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('schedule', $pdo);
 
 /* ========== Helpers ========== */
-function h(?string $v): string {
-    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-}
 
 function getSetting(PDO $pdo, string $key, string $default = ''): string {
     $st = $pdo->prepare("SELECT `value` FROM app_settings WHERE `key`=? LIMIT 1");
@@ -506,18 +503,12 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/planning_edit.php'.($isEdit ? " id=$id" : '')
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Planning wijzigen</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);background:url('<?= h($bg) ?>') no-repeat center center fixed;background-size:cover;}
-.backdrop{min-height:100vh;background:radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));padding:26px;box-sizing:border-box;display:flex;justify-content:center;}
 .wrap{width:min(900px,96vw);}
 .panel{margin-top:10px;border-radius:20px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));box-shadow:var(--shadow);backdrop-filter:blur(12px);padding:18px;}
-.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px;}
 .brand h1{margin:0;font-size:26px}
-.brand .sub{margin-top:6px;color:var(--muted);font-size:14px}
 .userbox{background:var(--glass);border:1px solid var(--border);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow);backdrop-filter:blur(10px);min-width:260px;}
-.userbox .line1{font-weight:bold}
-.userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
 .userbox a{color:#fff;text-decoration:none}
 .userbox a:hover{color:#ffd9b3}
 label{display:block;margin-top:12px}
@@ -530,18 +521,14 @@ input:focus,select:focus{border-color:rgba(255,255,255,.35);box-shadow:0 0 0 2px
 .checkbox-label input{width:auto;margin-top:0;transform:scale(1.1);cursor:pointer;background:transparent;border:1px solid var(--border);}
 .checkbox-label span{font-weight:normal;font-size:14px;color:rgba(255,255,255,.9);}
 .msg{margin-top:12px;font-size:13px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08)}
-.err{color:#ffb3b3}
 .info{color:rgba(255,255,255,.92)}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:720px){.row{grid-template-columns:1fr}}
-a{color:#fff;text-decoration:none;transition:color .15s ease}
-a:hover{color:#ffd9b3}
-a:visited{color:#ffe0c2}
 .mail-hint{font-size:12px;color:rgba(255,255,255,.6);margin-top:4px;margin-left:28px;}
 .hint-text{font-size:12px;color:rgba(255,255,255,.5);margin-top:4px;}
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop">
   <div class="wrap">
 

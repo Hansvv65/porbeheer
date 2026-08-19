@@ -38,17 +38,14 @@ $bg = themeImage('keys', $pdo);
 <head>
     <meta charset="utf-8">
     <title>Sleutel bekijken</title>
-    <style>
-        /* zelfde stijl als keys.php */
-        :root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--shadow:0 14px 40px rgba(0,0,0,.45);}
-        body{margin:0;font-family:Arial,sans-serif;color:var(--text);background:url('<?= h($bg) ?>') no-repeat center center fixed;background-size:cover;}
-        .backdrop{min-height:100vh;background:radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));padding:26px;box-sizing:border-box;display:flex;justify-content:center;}
-        .wrap{width:min(800px,96vw);}
-        .panel{background:var(--glass);border-radius:20px;padding:20px;backdrop-filter:blur(12px);}
-        a{color:#fff;}
-    </style>
+    <link rel="stylesheet" href="/assets/css/main.css">
+<style>
+.wrap{width:min(800px,96vw);}
+.panel{background:var(--glass);border-radius:20px;padding:20px;backdrop-filter:blur(12px);}
+a{color:#fff;}
+</style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop"><div class="wrap">
     <div class="panel">
         <h2>Sleutel: <?= h($key['key_code']) ?></h2>

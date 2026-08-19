@@ -11,9 +11,6 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
 
-
-function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-
 $id = (int)($_POST['id'] ?? 0);
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || $id <= 0) {
     header('Location: /admin/contact_edit.php');

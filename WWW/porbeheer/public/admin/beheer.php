@@ -33,87 +33,21 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Porbeheer - Beheer</title>
-  <style>
-    :root{
-      --text: #fff;
-      --muted: rgba(255,255,255,.78);
-      --border: rgba(255,255,255,.22);
-      --glass: rgba(255,255,255,.12);
-      --glass2: rgba(255,255,255,.06);
-      --shadow: 0 14px 40px rgba(0,0,0,.45);
-    }
-
-    body{
-      margin:0;
-      font-family: Arial, sans-serif;
-      color: var(--text);
-      background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
-      background-size: cover;
-    }
-
-    .backdrop{
-      min-height: 100vh;
-      background:
-        radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-        linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-      padding: 26px;
-      box-sizing: border-box;
-      display:flex;
-      justify-content:center;
-    }
-
-    .wrap{ width: min(1200px, 96vw); }
-
-    .topbar{
-      display:flex;
-      align-items:flex-end;
-      justify-content:space-between;
-      gap:16px;
-      flex-wrap:wrap;
-      margin-bottom: 14px;
-    }
-
-    .brand h1{ margin:0; font-size: 28px; letter-spacing: .5px; }
-    .brand .sub{ margin-top:6px; color: var(--muted); font-size: 14px; }
-
-    .userbox{
-      background: var(--glass);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px 14px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      min-width: 260px;
-    }
-    .userbox .line1{font-weight:bold}
-    .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
-
-    .panel{
-      margin-top: 10px;
-      border-radius: 20px;
-      border: 1px solid rgba(255,255,255,.18);
-      background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      padding: 18px;
-    }
-
-    .grid{
+  <link rel="stylesheet" href="/assets/css/main.css">
+<style>
+.grid{
       display:grid;
       grid-template-columns: repeat(4, minmax(160px, 1fr));
       gap: 14px;
     }
-    @media (max-width: 960px){
+@media (max-width: 960px){
       .grid{grid-template-columns: repeat(2, minmax(160px, 1fr));}
       .userbox{min-width: unset; width: 100%;}
     }
-    @media (max-width: 520px){
+@media (max-width: 520px){
       .grid{grid-template-columns: 1fr;}
     }
-
-    .tile{
+.tile{
       position: relative;
       border-radius: 16px;
       border: 1px solid rgba(255,255,255,.22);
@@ -137,17 +71,17 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
       text-align:center;
       padding: 10px 12px;
     }
-    .tile:hover{
+.tile:hover{
       transform: translateY(-2px);
       border-color: rgba(255,255,255,.38);
       background: linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,.08));
     }
-    .tile.disabled{
+.tile.disabled{
       opacity:.45;
       pointer-events:none;
       filter: grayscale(35%);
     }
-    .tile::before{
+.tile::before{
       content:"";
       position:absolute;
       inset:-40%;
@@ -171,14 +105,9 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
     }
 
     }
- 
-  a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
-  </style>
+</style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
   <div class="backdrop">
     <div class="wrap">
       <div class="topbar">

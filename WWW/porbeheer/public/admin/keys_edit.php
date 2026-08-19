@@ -81,12 +81,6 @@ $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('keys', $pdo);
 auditLog($pdo, 'PAGE_VIEW', 'admin/keys_edit.php');
 
-function h($v): string {
-    if ($v === null) return '';
-    if (is_int($v) || is_float($v)) return (string)$v;
-    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-}
-
 $errors = [];
 $msg = null;
 $id = (int)($_GET['id'] ?? ($_POST['id'] ?? 0));
@@ -206,26 +200,17 @@ $title = $isEdit ? 'Sleutel bewerken' : 'Nieuwe sleutel';
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - <?= h($title) ?></title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--shadow:0 14px 40px rgba(0,0,0,.45);}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);background:url('<?= h($bg) ?>') no-repeat center center fixed;background-size:cover;}
-.backdrop{min-height:100vh;background:radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));padding:26px;box-sizing:border-box;display:flex;justify-content:center;}
 .wrap{width:min(1100px,96vw);}
-.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px;}
-.brand h1{margin:0;font-size:28px;letter-spacing:.5px}
-.brand .sub{margin-top:6px;color:var(--muted);font-size:14px}
 .userbox{background:var(--glass);border:1px solid var(--border);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow);backdrop-filter:blur(10px);min-width:260px;}
-.userbox .line1{font-weight:bold}
 .userbox .line2{color:var(--muted);margin-top:6px;font-size:13px;display:flex;gap:10px;flex-wrap:wrap}
 .panel{margin-top:10px;border-radius:20px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));box-shadow:var(--shadow);backdrop-filter:blur(12px);padding:18px;}
 .card{border-radius:16px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.05));padding:20px;margin-bottom:20px;box-shadow:0 10px 22px rgba(0,0,0,.30);backdrop-filter:blur(10px);}
 .card:last-child{margin-bottom:0;}
 h2{margin:0 0 15px 0;font-size:20px;border-bottom:1px solid var(--border);padding-bottom:10px;}
 h3{margin:0 0 10px 0;font-size:16px;}
-.small{font-size:13px;color:var(--muted)}
-a{color:#fff;text-decoration:none} a:hover{color:#ffd9b3}
-.msg{margin:10px 0;font-size:13px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08)}
-.err{color:#ffb3b3}
+a{color:#fff;text-decoration:none}
 .success{color:#a3ffb3}
 .btn{display:inline-block;padding:10px 18px;border-radius:12px;border:1px solid rgba(255,255,255,.22);background:linear-gradient(180deg, var(--glass), rgba(255,255,255,.06));color:#fff;font-weight:800;cursor:pointer;font-size:14px;}
 .btn-primary{background:linear-gradient(180deg, #2c7da0, #1f5068);border-color:#4a9fc5;}
@@ -253,7 +238,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
 .readonly-text { padding: 10px 12px; background: rgba(0,0,0,.15); border-radius: 12px; border: 1px solid rgba(255,255,255,.18); color: var(--muted); }
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop"><div class="wrap">
 <div class="topbar">
     <div class="brand"><h1>🔑 <?= h($title) ?></h1><div class="sub">Sleuteladministratie</div></div>

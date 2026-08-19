@@ -10,11 +10,6 @@ header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
 
-function h(?string $v): string
-{
-    return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
-}
-
 if (isLoggedIn()) {
     header('Location: ' . appUrl('/admin/dashboard.php'));
     exit;
@@ -132,23 +127,12 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $token === ''
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - E-mail bevestigen</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
 :root{
-  --text:#fff;
-  --muted:rgba(255,255,255,.78);
-  --glass:rgba(255,255,255,.12);
-  --glass2:rgba(255,255,255,.06);
-  --shadow:0 14px 40px rgba(0,0,0,.45);
-  --ok:#7CFFB2;
-  --err:#FF8DA1;
-  --info:#bf721f;
-}
-body{
-  margin:0;
-  font-family:Arial,sans-serif;
-  color:var(--text);
-  background:url('/assets/images/loginbg.png') no-repeat center center fixed;
-  background-size:cover;
+  --err: #FF8DA1;
+  --info: #bf721f;
+  --ok: #7CFFB2;
 }
 .backdrop{
   min-height:100vh;
@@ -192,7 +176,7 @@ a{color:var(--info);text-decoration:none;font-weight:600;text-shadow:0 1px 2px r
 a:hover{text-decoration:underline;filter:brightness(1.2);}
 </style>
 </head>
-<body>
+<body style="background-image:url('/assets/images/loginbg.png')">
 <div class="backdrop">
   <div class="box">
     <h1>E-mail bevestigen</h1>

@@ -131,17 +131,12 @@ $csrf = csrfToken();
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Porbeheer - 2FA instellen</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
 :root{
-  --text:#fff; --muted:rgba(255,255,255,.78); --border:rgba(255,255,255,.22);
-  --glass:rgba(255,255,255,.12); --glass2:rgba(255,255,255,.06);
-  --shadow:0 14px 40px rgba(0,0,0,.45);
-  --ok:#7CFFB2; --err:#FF8DA1; --info:#9fd1ff;
-}
-body{
-  margin:0;font-family:Arial,sans-serif;color:var(--text);
-  background:url('<?= h($bg) ?>') no-repeat center center fixed;
-  background-size:cover;
+  --err: #FF8DA1;
+  --info: #9fd1ff;
+  --ok: #7CFFB2;
 }
 .backdrop{
   min-height:100vh;
@@ -247,7 +242,6 @@ h1,h2,h3{ margin-top:0; }
   letter-spacing:.10em;
   text-align:center;
 }
-.small{ color:var(--muted); font-size:13px; }
 label{ display:block; margin-top:12px; font-weight:800; }
 input{
   width:100%;
@@ -291,7 +285,7 @@ input{
 }
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop">
   <div class="wrap">
 

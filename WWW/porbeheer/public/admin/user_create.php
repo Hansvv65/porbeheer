@@ -12,8 +12,6 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
 
-function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-
 $errors = [];
 $success = null;
 
@@ -149,35 +147,16 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Porbeheer - Nieuwe gebruiker</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-  :root{
-    --text:#fff; --muted:rgba(255,255,255,.78);
-    --border:rgba(255,255,255,.22);
-    --glass:rgba(255,255,255,.12);
-    --shadow:0 14px 40px rgba(0,0,0,.45);
-    --ok:#7CFFB2; --err:#FF8DA1; --accent:#ffd86b;
-  }
-  body{
-    margin:0; font-family:Arial,sans-serif; color:var(--text);
-    background:url('<?= h($bg) ?>') no-repeat center center fixed;
-    background-size:cover;
-  }
-  .backdrop{
-    min-height:100vh;
-    background:
-      radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-      linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-    padding:26px; box-sizing:border-box;
-    display:flex; justify-content:center;
-  }
-  .wrap{ width:min(980px, 96vw); }
-  .topbar{
-    display:flex; align-items:flex-end; justify-content:space-between;
-    gap:16px; flex-wrap:wrap; margin-bottom:14px;
-  }
-  .brand h1{ margin:0; font-size:28px; }
-  .brand .sub{ margin-top:6px; color:var(--muted); font-size:14px; }
-  .userbox{
+:root{
+  --accent: #ffd86b;
+  --err: #FF8DA1;
+  --ok: #7CFFB2;
+}
+.wrap{ width:min(980px, 96vw); }
+.brand h1{ margin:0; font-size:28px; }
+.userbox{
     background:var(--glass);
     border:1px solid var(--border);
     border-radius:14px;
@@ -186,13 +165,10 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     backdrop-filter:blur(10px);
     min-width:260px;
   }
-  .userbox .line1{font-weight:bold}
-  .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
-  a{ color:#fff; text-decoration:none; }
-  a:visited{ color:var(--accent); }
-  a:hover{ opacity:.95; }
-
-  .panel{
+a{ color:#fff; text-decoration:none; }
+a:visited{ color:var(--accent); }
+a:hover{ opacity:.95; }
+.panel{
     margin-top:10px;
     border-radius:20px;
     border:1px solid rgba(255,255,255,.18);
@@ -201,9 +177,8 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     backdrop-filter:blur(12px);
     padding:18px;
   }
-
-  label{ display:block; margin-top:10px; font-weight:800; }
-  input[type="text"], input[type="password"], input[type="email"], select{
+label{ display:block; margin-top:10px; font-weight:800; }
+input[type="text"], input[type="password"], input[type="email"], select{
     width:100%;
     padding:10px 12px;
     margin-top:6px;
@@ -214,9 +189,8 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     outline:none;
     box-sizing:border-box;
   }
-  input:focus{ border-color:rgba(255,255,255,.38); box-shadow:0 0 0 3px rgba(255,255,255,.10); }
-
-  .roles{
+input:focus{ border-color:rgba(255,255,255,.38); box-shadow:0 0 0 3px rgba(255,255,255,.10); }
+.roles{
     margin-top:10px;
     display:flex; flex-wrap:wrap; gap:10px;
     padding:10px 12px;
@@ -224,14 +198,13 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     background:rgba(0,0,0,.14);
     border-radius:14px;
   }
-  .roleitem{ display:flex; align-items:center; gap:8px; font-weight:800; font-size:13px; }
-  .roleitem input{ transform:scale(1.12); }
-
-  .row{
+.roleitem{ display:flex; align-items:center; gap:8px; font-weight:800; font-size:13px; }
+.roleitem input{ transform:scale(1.12); }
+.row{
     display:flex; gap:12px; align-items:center; justify-content:space-between;
     margin-top:14px; flex-wrap:wrap;
   }
-  .btn{
+.btn{
     display:inline-block;
     padding:10px 14px;
     border-radius:12px;
@@ -244,25 +217,24 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/user_create.php');
     transition:transform .12s ease, background .12s ease;
     text-decoration:none;
   }
-  .btn:hover{ transform:translateY(-1px); background:rgba(255,255,255,.18); }
-  .btn.ok{ border-color:rgba(124,255,178,.35); background:rgba(124,255,178,.10); }
-
-  .msg-err{
+.btn:hover{ transform:translateY(-1px); background:rgba(255,255,255,.18); }
+.btn.ok{ border-color:rgba(124,255,178,.35); background:rgba(124,255,178,.10); }
+.msg-err{
     margin:0 0 10px 0; padding:10px 12px; border-radius:12px;
     border:1px solid rgba(255,141,161,.35);
     background:rgba(255,141,161,.12);
     color:var(--err); font-weight:800;
   }
-  .muted{ color:var(--muted); font-size:13px; margin-top:6px; }
-  .grid-2{
+.muted{ color:var(--muted); font-size:13px; margin-top:6px; }
+.grid-2{
     display:grid;
     grid-template-columns: 1fr 1fr;
     gap:12px;
   }
-  @media (max-width: 700px){ .grid-2{ grid-template-columns:1fr; } }
+@media (max-width: 700px){ .grid-2{ grid-template-columns:1fr; } }
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop">
   <div class="wrap">
     <div class="topbar">

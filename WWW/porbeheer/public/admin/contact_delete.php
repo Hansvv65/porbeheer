@@ -11,9 +11,6 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
 
-
-function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-
 $errors  = [];
 $success = null;
 
@@ -73,51 +70,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - Contact verwijderen</title>
 
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{
- --text:#fff;
- --muted:rgba(255,255,255,.78);
- --border:rgba(255,255,255,.22);
- --glass:rgba(255,255,255,.12);
- --glass2:rgba(255,255,255,.06);
- --shadow:0 14px 40px rgba(0,0,0,.45);
-}
-
-body{
- margin:0;
- font-family:Arial,sans-serif;
- color:var(--text);
- background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
- background-size:cover;
-}
-
 a{ color:#fff; }
-
-.backdrop{
- min-height:100vh;
- background:
-   radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-   linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
- padding:26px;
- box-sizing:border-box;
- display:flex;
- justify-content:center;
-}
-
 .wrap{width:min(900px,96vw);}
-
-.topbar{
- display:flex;
- align-items:flex-end;
- justify-content:space-between;
- gap:16px;
- flex-wrap:wrap;
- margin-bottom:14px;
-}
-
 .brand h1{margin:0;font-size:28px}
-.brand .sub{margin-top:6px;color:var(--muted);font-size:14px}
-
 .userbox{
  background:var(--glass);
  border:1px solid var(--border);
@@ -127,7 +84,6 @@ a{ color:#fff; }
  backdrop-filter:blur(10px);
  min-width:260px;
 }
-
 .panel{
  margin-top:10px;
  border-radius:20px;
@@ -137,7 +93,6 @@ a{ color:#fff; }
  backdrop-filter:blur(12px);
  padding:18px;
 }
-
 .msg{
  margin-bottom:12px;
  padding:10px 12px;
@@ -146,17 +101,14 @@ a{ color:#fff; }
  background:rgba(255,255,255,.08);
  font-size:13px;
 }
-
 .ok{color:#b8ffb8}
 .err{color:#ffb8b8}
-
 .card{
  border-radius:16px;
  border:1px solid rgba(255,255,255,.16);
  background:rgba(255,255,255,.06);
  padding:14px;
 }
-
 .kv{
  display:grid;
  grid-template-columns: 160px 1fr;
@@ -166,17 +118,14 @@ a{ color:#fff; }
 @media (max-width:720px){
  .kv{grid-template-columns:1fr;}
 }
-
 .k{color:var(--muted);font-size:13px}
 .v{font-size:14px}
-
 .actions{
  display:flex;
  gap:10px;
  flex-wrap:wrap;
  margin-top:14px;
 }
-
 .btn{
  display:inline-block;
  text-decoration:none;
@@ -188,31 +137,23 @@ a{ color:#fff; }
  background:linear-gradient(180deg, var(--glass), var(--glass2));
  cursor:pointer;
 }
-
 .btn:hover{ border-color:rgba(255,255,255,.38); }
-
 .btn.secondary{
  font-weight:700;
  opacity:.95;
 }
-
 .btn.danger{
  border-color:rgba(255,120,120,.45);
 }
-
 .smallnote{
  margin-top:10px;
  color:var(--muted);
  font-size:12px;
 }
-  a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
 </style>
 </head>
 
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop">
   <div class="wrap">
 

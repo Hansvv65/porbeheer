@@ -4,9 +4,6 @@ require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/mail.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/auth.php';
 
-
-function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-
 function getClientIp(): string {
     $headers = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
     foreach ($headers as $header) {
@@ -241,12 +238,11 @@ $pendingUser = $pending2fa ? loadPending2faUser($pdo) : null;
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - Inloggen</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);
---glass:rgba(255,255,255,.14);--glass2:rgba(255,255,255,.08);--shadow:0 20px 50px rgba(0,0,0,.5);
---err:#FF8DA1;--ok:#7CFFB2;--info:#bf721f;--warn:#ffd86b;}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);
-background:url('/assets/images/loginbg.png') no-repeat center center fixed;background-size:cover;}
+/* Loginpagina heeft bewust een eigen, compacte kaartstijl i.p.v. de admin-layout. */
+:root{--err:#FF8DA1;--ok:#7CFFB2;--info:#bf721f;--warn:#ffd86b;
+--glass:rgba(255,255,255,.14);--glass2:rgba(255,255,255,.08);--shadow:0 20px 50px rgba(0,0,0,.5);}
 .backdrop{min-height:100vh;display:flex;align-items:center;justify-content:center;
 padding:26px;box-sizing:border-box;
 background:radial-gradient(circle at 25% 15%,rgba(0,0,0,.35),rgba(0,0,0,.75) 55%,rgba(0,0,0,.88));}
@@ -290,7 +286,7 @@ input:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0
 .msg.info{background:rgba(255,179,71,0.15);color:var(--info);border-color:var(--info);}
 </style>
 </head>
-<body>
+<body style="background-image:url('/assets/images/loginbg.png')">
 <div class="backdrop">
   <div class="shell">
     <div class="card">

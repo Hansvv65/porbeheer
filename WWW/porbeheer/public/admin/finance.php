@@ -16,9 +16,6 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('finance', $pdo);
 
-
-function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-
 auditLog($pdo, 'PAGE_VIEW', 'admin/finance.php');
 
 /**
@@ -55,7 +52,6 @@ function getSetting(PDO $pdo, string $key, string $default = ''): string
 $monthPrice = (float)getSetting($pdo, 'subscription_month_price', '0.00');
 $daypartPrice = (float)getSetting($pdo, 'daypart_price', '0.00');
 */
-
 
 /* Periode */
 $today = new DateTimeImmutable('today');
@@ -141,43 +137,9 @@ function allowedTile(array $tile, string $role): bool {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Porbeheer - Financiën</title>
-  <style>
-    :root{
-      --text:#fff;
-      --muted:rgba(255,255,255,.78);
-      --border:rgba(255,255,255,.22);
-      --glass:rgba(255,255,255,.12);
-      --glass2:rgba(255,255,255,.06);
-      --shadow:0 14px 40px rgba(0,0,0,.45);
-    }
-    body{
-      margin:0;
-      font-family:Arial,sans-serif;
-      color:var(--text);
-      background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
-    }
-    .backdrop{
-      min-height:100vh;
-      background:
-        radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-        linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-      padding:26px;
-      box-sizing:border-box;
-      display:flex;
-      justify-content:center;
-    }
-    .wrap{ width:min(1200px,96vw); }
-    .topbar{
-      display:flex;
-      align-items:flex-end;
-      justify-content:space-between;
-      gap:16px;
-      flex-wrap:wrap;
-      margin-bottom:14px;
-    }
-    .brand h1{ margin:0; font-size:28px; letter-spacing:.5px; }
-    .brand .sub{ margin-top:6px; color:var(--muted); font-size:14px; }
-    .userbox{
+  <link rel="stylesheet" href="/assets/css/main.css">
+<style>
+.userbox{
       background:var(--glass);
       border:1px solid var(--border);
       border-radius:14px;
@@ -187,30 +149,18 @@ function allowedTile(array $tile, string $role): bool {
       -webkit-backdrop-filter:blur(10px);
       min-width:280px;
     }
-    .userbox .line1{ font-weight:bold; }
-    .userbox .line2{ color:var(--muted); margin-top:6px; font-size:13px; display:flex; gap:10px; flex-wrap:wrap; }
-    .panel{
-      margin-top:10px;
-      border-radius:20px;
-      border:1px solid rgba(255,255,255,.18);
-      background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
-      box-shadow:var(--shadow);
-      backdrop-filter:blur(12px);
-      -webkit-backdrop-filter:blur(12px);
-      padding:18px;
-    }
-    .grid{
+.userbox .line2{ color:var(--muted); margin-top:6px; font-size:13px; display:flex; gap:10px; flex-wrap:wrap; }
+.grid{
       display:grid;
       grid-template-columns:repeat(4, minmax(160px, 1fr));
       gap:14px;
     }
-    @media (max-width:960px){
+@media (max-width:960px){
       .grid{ grid-template-columns:repeat(2, minmax(160px, 1fr)); }
       .userbox{ min-width:unset; width:100%; }
     }
-    @media (max-width:520px){ .grid{ grid-template-columns:1fr; } }
-
-    .tile{
+@media (max-width:520px){ .grid{ grid-template-columns:1fr; } }
+.tile{
       position:relative;
       border-radius:16px;
       border:1px solid rgba(255,255,255,.22);
@@ -231,33 +181,27 @@ function allowedTile(array $tile, string $role): bool {
       text-align:center;
       padding:10px 12px;
     }
-    .tile:hover{
+.tile:hover{
       transform:translateY(-2px);
       border-color:rgba(255,255,255,.38);
       background:linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,.08));
     }
-    .tile.disabled{ opacity:.45; pointer-events:none; filter:grayscale(35%); }
-    .tile::before{
+.tile.disabled{ opacity:.45; pointer-events:none; filter:grayscale(35%); }
+.tile::before{
       content:"";
       position:absolute;
       inset:-40%;
       background:radial-gradient(circle at 20% 30%, rgba(255,255,255,.22), transparent 45%);
       transform:rotate(12deg);
     }
-
-    a{ color:#fff; text-decoration:none; transition:color .15s ease; }
-    a:hover{ color:#ffd9b3; }
-    a:visited{ color:#ffe0c2; }
-
-    .kpiRow{
+.kpiRow{
       display:grid;
       grid-template-columns: repeat(3, minmax(160px, 1fr));
       gap:14px;
       margin-top:14px;
     }
-    @media (max-width:960px){ .kpiRow{ grid-template-columns:1fr; } }
-
-    .kpi{
+@media (max-width:960px){ .kpiRow{ grid-template-columns:1fr; } }
+.kpi{
       border-radius:16px;
       border:1px solid rgba(255,255,255,.22);
       background:linear-gradient(180deg, var(--glass), var(--glass2));
@@ -266,24 +210,23 @@ function allowedTile(array $tile, string $role): bool {
       overflow:hidden;
       position:relative;
     }
-    .kpi h3{ margin:0 0 8px 0; font-size:14px; color:var(--muted); font-weight:700; }
-    .kpi .v{ font-size:26px; font-weight:900; letter-spacing:.2px; }
-    .kpi .s{ margin-top:6px; color:var(--muted); font-size:13px; }
-
-    .table{
+.kpi h3{ margin:0 0 8px 0; font-size:14px; color:var(--muted); font-weight:700; }
+.kpi .v{ font-size:26px; font-weight:900; letter-spacing:.2px; }
+.kpi .s{ margin-top:6px; color:var(--muted); font-size:13px; }
+.table{
       width:100%;
       border-collapse:collapse;
       margin-top:10px;
       font-size:13px;
       color:#fff;
     }
-    .table th, .table td{
+.table th, .table td{
       padding:10px 8px;
       border-bottom:1px solid rgba(255,255,255,.16);
       vertical-align:top;
     }
-    .table th{ text-align:left; color:rgba(255,255,255,.85); font-size:12px; letter-spacing:.2px; }
-    .pill{
+.table th{ text-align:left; color:rgba(255,255,255,.85); font-size:12px; letter-spacing:.2px; }
+.pill{
       display:inline-block;
       padding:4px 8px;
       border-radius:999px;
@@ -293,8 +236,8 @@ function allowedTile(array $tile, string $role): bool {
       color:rgba(255,255,255,.9);
       white-space:nowrap;
     }
-    .rowflex{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-    select, input{
+.rowflex{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+select, input{
       padding:10px 10px;
       border-radius:12px;
       border:1px solid rgba(255,255,255,.22);
@@ -302,8 +245,8 @@ function allowedTile(array $tile, string $role): bool {
       color:#fff;
       outline:none;
     }
-    option{ color:#000; }
-    .btn{
+option{ color:#000; }
+.btn{
       display:inline-block;
       padding:10px 12px;
       border-radius:12px;
@@ -311,14 +254,10 @@ function allowedTile(array $tile, string $role): bool {
       background:rgba(255,255,255,.10);
       font-weight:800;
     }
-    .btn:hover{ background:rgba(255,255,255,.16); }
-      a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
-  </style>
+.btn:hover{ background:rgba(255,255,255,.16); }
+</style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
   <div class="backdrop">
     <div class="wrap">
       <div class="topbar">

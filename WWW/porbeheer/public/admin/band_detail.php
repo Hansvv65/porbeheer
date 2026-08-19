@@ -215,60 +215,13 @@ $incidentalPrice   = (string)getSetting($pdo, 'daypart_price', '0.00');
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Band detail - Porbeheer</title>
 
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{
-  --text:#fff;
-  --muted:rgba(255,255,255,.78);
-  --border:rgba(255,255,255,.22);
-  --glass:rgba(255,255,255,.12);
-  --glass2:rgba(255,255,255,.06);
-  --shadow:0 14px 40px rgba(0,0,0,.45);
-}
-body{
-  margin:0;
-  font-family:Arial,sans-serif;
-  color:var(--text);
-  background:url('<?= h($bg) ?>') no-repeat center center fixed;
-  background-size:cover;
-}
-.backdrop{
-  min-height:100vh;
-  background:
-    radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-    linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-  padding:26px;
-  box-sizing:border-box;
-  display:flex;
-  justify-content:center;
-}
 .wrap{width:min(1100px,96vw);}
-.topbar{
-  display:flex;
-  align-items:flex-end;
-  justify-content:space-between;
-  gap:16px;
-  flex-wrap:wrap;
-  margin-bottom:14px;
-}
-.brand h1{margin:0;font-size:28px;letter-spacing:.5px;}
 .brand .sub{margin-top:6px;font-size:14px;}
 .brand .sub a{color:#fff;text-decoration:none;margin-right:14px;}
-.brand .sub a:hover{color:#ffd9b3}
-.userbox{
-  background:var(--glass);
-  border:1px solid var(--border);
-  border-radius:14px;
-  padding:12px 14px;
-  box-shadow:var(--shadow);
-  backdrop-filter:blur(10px);
-  -webkit-backdrop-filter:blur(10px);
-  min-width:260px;
-}
-.userbox .line1{font-weight:bold}
-.userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
 .userbox a{color:#fff;text-decoration:none}
 .userbox a:hover{color:#ffd9b3}
-
 .panel{
   border-radius:20px;
   border:1px solid rgba(255,255,255,.18);
@@ -278,10 +231,8 @@ body{
   -webkit-backdrop-filter:blur(12px);
   padding:24px;
 }
-
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 @media (max-width:920px){ .grid{grid-template-columns:1fr;} }
-
 .card{
   border-radius:16px;
   border:1px solid rgba(255,255,255,.18);
@@ -292,7 +243,6 @@ body{
   padding:14px;
 }
 .card h2{margin:0 0 10px 0;font-size:18px;}
-
 .badge{
   display:inline-block;
   padding:3px 8px;
@@ -302,14 +252,10 @@ body{
   margin-right:6px;
   font-size:12px;
 }
-.small{font-size:13px;color:var(--muted)}
 hr{border:none;border-top:1px solid rgba(255,255,255,.12);margin:10px 0}
-a{color:#fff;text-decoration:none;transition:color .15s ease}
-a:hover{color:#ffd9b3}
-a:visited{color:#ffe0c2}
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 
 <div class="backdrop">
 <div class="wrap">

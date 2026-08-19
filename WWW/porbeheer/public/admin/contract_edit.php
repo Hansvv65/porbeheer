@@ -283,12 +283,6 @@ $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('keys', $pdo);
 auditLog($pdo, 'PAGE_VIEW', 'admin/contract_edit.php');
 
-function h($v): string {
-    if ($v === null) return '';
-    if (is_int($v) || is_float($v)) return (string)$v;
-    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-}
-
 function buildFullName(?string $first, ?string $tussen, ?string $last): string {
     return trim(implode(' ', array_filter([$first, $tussen, $last])));
 }

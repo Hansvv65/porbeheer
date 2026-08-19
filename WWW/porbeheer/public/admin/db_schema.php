@@ -526,75 +526,17 @@ try {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Porbeheer - Database schema</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-  :root{
-    --text:#fff;
-    --muted:rgba(255,255,255,.78);
-    --border:rgba(255,255,255,.22);
-    --glass:rgba(255,255,255,.12);
-    --shadow:0 14px 40px rgba(0,0,0,.45);
-    --ok:#7CFFB2;
-    --err:#FF8DA1;
-    --accent:#ffd86b;
-  }
-  body{
-    margin:0;
-    font-family:Arial,sans-serif;
-    color:var(--text);
-    background:url('<?= h($bg) ?>') no-repeat center center fixed;
-    background-size:cover;
-  }
-  .backdrop{
-    min-height:100vh;
-    background:
-      radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-      linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-    padding:26px;
-    box-sizing:border-box;
-    display:flex;
-    justify-content:center;
-  }
-  .wrap{ width:min(1280px, 96vw); }
-
-  .topbar{
-    display:flex;
-    align-items:flex-end;
-    justify-content:space-between;
-    gap:16px;
-    flex-wrap:wrap;
-    margin-bottom:14px;
-  }
-  .brand h1{ margin:0; font-size:28px; letter-spacing:.5px; }
-  .brand .sub{ margin-top:6px; color:var(--muted); font-size:14px; }
-
-  .userbox{
-    background:var(--glass);
-    border:1px solid var(--border);
-    border-radius:14px;
-    padding:12px 14px;
-    box-shadow:var(--shadow);
-    backdrop-filter:blur(10px);
-    -webkit-backdrop-filter:blur(10px);
-    min-width:260px;
-  }
-  .userbox .line1{ font-weight:bold; }
-  .userbox .line2{ color:var(--muted); margin-top:4px; font-size:13px; }
-
-  a{ color:#fff; }
-  a:visited{ color:var(--accent); }
-
-  .panel{
-    margin-top:10px;
-    border-radius:20px;
-    border:1px solid rgba(255,255,255,.18);
-    background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
-    box-shadow:var(--shadow);
-    backdrop-filter:blur(12px);
-    -webkit-backdrop-filter:blur(12px);
-    padding:18px;
-  }
-
-  .toolbar{
+:root{
+  --accent: #ffd86b;
+  --err: #FF8DA1;
+  --ok: #7CFFB2;
+}
+.wrap{ width:min(1280px, 96vw); }
+a{ color:#fff; }
+a:visited{ color:var(--accent); }
+.toolbar{
     display:flex;
     gap:10px;
     flex-wrap:wrap;
@@ -602,18 +544,17 @@ try {
     justify-content:space-between;
     margin-bottom:14px;
   }
-  .toolbar-left{
+.toolbar-left{
     display:flex;
     gap:10px;
     flex-wrap:wrap;
     align-items:center;
   }
-  .meta{
+.meta{
     color:var(--muted);
     font-size:13px;
   }
-
-  .btn{
+.btn{
     display:inline-block;
     padding:10px 14px;
     border-radius:12px;
@@ -626,17 +567,16 @@ try {
     transition:transform .12s ease, background .12s ease, border-color .12s ease;
     text-decoration:none;
   }
-  .btn:hover{
+.btn:hover{
     transform:translateY(-1px);
     background:rgba(255,255,255,.18);
     border-color:rgba(255,255,255,.35);
   }
-  .btn.ok{
+.btn.ok{
     border-color:rgba(124,255,178,.35);
     background:rgba(124,255,178,.10);
   }
-
-  .msg-err{
+.msg-err{
     margin:0 0 12px 0;
     padding:10px 12px;
     border-radius:12px;
@@ -645,8 +585,7 @@ try {
     color:var(--err);
     font-weight:800;
   }
-
-  textarea.schema{
+textarea.schema{
     width:100%;
     min-height:74vh;
     resize:vertical;
@@ -660,23 +599,18 @@ try {
     outline:none;
     white-space:pre;
   }
-  textarea.schema:focus{
+textarea.schema:focus{
     border-color:rgba(255,255,255,.34);
     box-shadow:0 0 0 3px rgba(255,255,255,.08);
   }
-
-  .hint{
+.hint{
     margin-top:10px;
     color:var(--muted);
     font-size:13px;
   }
-    a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop">
   <div class="wrap">
 

@@ -12,8 +12,6 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
 
-function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-
 function mailLayout(string $title, string $intro, string $contentHtml): string {
     return '
     <div style="margin:0;padding:24px;background:#f4f7fb;font-family:Arial,sans-serif;color:#243447;">
@@ -403,33 +401,14 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Porbeheer - User detail</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-  :root{
-    --text:#fff; --muted:rgba(255,255,255,.78);
-    --border:rgba(255,255,255,.22);
-    --glass:rgba(255,255,255,.12);
-    --shadow:0 14px 40px rgba(0,0,0,.45);
-    --ok:#7CFFB2; --err:#FF8DA1; --accent:#ffd86b;
-  }
-  body{
-    margin:0; font-family:Arial,sans-serif; color:var(--text);
-    background:url('<?= h($bg) ?>') no-repeat center center fixed;
-    background-size:cover;
-  }
-  .backdrop{
-    min-height:100vh;
-    background: radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)), linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-    padding:26px; box-sizing:border-box;
-    display:flex; justify-content:center;
-  }
-  .wrap{ width:min(1200px, 96vw); }
-  .topbar{
-    display:flex; align-items:flex-end; justify-content:space-between;
-    gap:16px; flex-wrap:wrap; margin-bottom:14px;
-  }
-  .brand h1{ margin:0; font-size:28px; letter-spacing:.5px; }
-  .brand .sub{ margin-top:6px; color:var(--muted); font-size:14px; }
-  .userbox{
+:root{
+  --accent: #ffd86b;
+  --err: #FF8DA1;
+  --ok: #7CFFB2;
+}
+.userbox{
     background:var(--glass);
     border:1px solid var(--border);
     border-radius:14px;
@@ -438,13 +417,10 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     backdrop-filter:blur(10px);
     min-width:260px;
   }
-  .userbox .line1{font-weight:bold}
-  .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
-  a{ color:#fff; text-decoration:none; }
-  a:visited{ color:var(--accent); }
-  a:hover{ opacity:.95; }
-
-  .panel{
+a{ color:#fff; text-decoration:none; }
+a:visited{ color:var(--accent); }
+a:hover{ opacity:.95; }
+.panel{
     margin-top:10px;
     border-radius:20px;
     border:1px solid rgba(255,255,255,.18);
@@ -453,7 +429,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     backdrop-filter:blur(12px);
     padding:18px;
   }
-  .btn{
+.btn{
     display:inline-block;
     padding:10px 14px;
     border-radius:12px;
@@ -465,23 +441,23 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     box-shadow:0 10px 22px rgba(0,0,0,.20);
     transition:transform .12s ease, background .12s ease;
   }
-  .btn:hover{ transform:translateY(-1px); background:rgba(255,255,255,.18); }
-  .btn.ok{ border-color:rgba(124,255,178,.35); background:rgba(124,255,178,.10); }
-  .btn.danger{ border-color:rgba(255,141,161,.35); background:rgba(255,141,161,.10); }
-  .btn.small{ padding:8px 10px; font-size:13px; }
-  .msg-ok{
+.btn:hover{ transform:translateY(-1px); background:rgba(255,255,255,.18); }
+.btn.ok{ border-color:rgba(124,255,178,.35); background:rgba(124,255,178,.10); }
+.btn.danger{ border-color:rgba(255,141,161,.35); background:rgba(255,141,161,.10); }
+.btn.small{ padding:8px 10px; font-size:13px; }
+.msg-ok{
     margin:0 0 10px 0; padding:10px 12px; border-radius:12px;
     border:1px solid rgba(124,255,178,.35);
     background:rgba(124,255,178,.12);
     color:var(--ok); font-weight:900;
   }
-  .msg-err{
+.msg-err{
     margin:0 0 10px 0; padding:10px 12px; border-radius:12px;
     border:1px solid rgba(255,141,161,.35);
     background:rgba(255,141,161,.12);
     color:var(--err); font-weight:900;
   }
-  .badge{
+.badge{
     display:inline-block;
     padding:3px 10px;
     border-radius:999px;
@@ -491,24 +467,24 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     font-size:12px;
     margin-right:6px;
   }
-  .badge.ok{ border-color:rgba(124,255,178,.35); color:var(--ok); background:rgba(124,255,178,.10); }
-  .badge.off{ border-color:rgba(255,141,161,.35); color:var(--err); background:rgba(255,141,161,.10); }
-  .badge.warn{ border-color:rgba(255,216,107,.40); color:var(--accent); background:rgba(255,216,107,.10); }
-  .grid{
+.badge.ok{ border-color:rgba(124,255,178,.35); color:var(--ok); background:rgba(124,255,178,.10); }
+.badge.off{ border-color:rgba(255,141,161,.35); color:var(--err); background:rgba(255,141,161,.10); }
+.badge.warn{ border-color:rgba(255,216,107,.40); color:var(--accent); background:rgba(255,216,107,.10); }
+.grid{
     display:grid;
     grid-template-columns: 1fr 1fr;
     gap:14px;
     margin-top:12px;
   }
-  @media (max-width: 900px){ .grid{ grid-template-columns: 1fr; } }
-  .box{
+@media (max-width: 900px){ .grid{ grid-template-columns: 1fr; } }
+.box{
     border-radius:16px;
     border:1px solid rgba(255,255,255,.18);
     background:rgba(0,0,0,.14);
     padding:14px;
   }
-  .label{ color:var(--muted); font-size:12px; font-weight:900; }
-  .inp{
+.label{ color:var(--muted); font-size:12px; font-weight:900; }
+.inp{
     width:100%;
     margin-top:6px;
     padding:10px 12px;
@@ -519,10 +495,10 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     outline:none;
     box-sizing:border-box;
   }
-  .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-  .small{ margin-top:6px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
-  .hr{ height:1px; background:rgba(255,255,255,.12); margin:12px 0; }
-  .rolegrid{
+.row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.small{ margin-top:6px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+.hr{ height:1px; background:rgba(255,255,255,.12); margin:12px 0; }
+.rolegrid{
     display:flex; flex-wrap:wrap; gap:10px;
     margin-top:10px;
     padding:10px 12px;
@@ -530,11 +506,11 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     background:rgba(0,0,0,.12);
     border-radius:14px;
   }
-  .roleitem{ display:flex; align-items:center; gap:8px; font-weight:900; font-size:13px; }
-  .roleitem input{ transform:scale(1.12); }
+.roleitem{ display:flex; align-items:center; gap:8px; font-weight:900; font-size:13px; }
+.roleitem input{ transform:scale(1.12); }
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop">
   <div class="wrap">
     <div class="topbar">

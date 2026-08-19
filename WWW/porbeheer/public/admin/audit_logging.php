@@ -122,102 +122,38 @@ function prettyJson($v): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Porbeheer - Audit logging</title>
-  <style>
-    :root{
-      --text: #fff;
-      --muted: rgba(255,255,255,.78);
-      --border: rgba(255,255,255,.22);
-      --glass: rgba(255,255,255,.12);
-      --glass2: rgba(255,255,255,.06);
-      --shadow: 0 14px 40px rgba(0,0,0,.45);
-      --ok: rgba(120, 255, 170, .22);
-      --warn: rgba(255, 216, 107, .22);
-      --danger: rgba(255, 120, 120, .22);
-    }
-
-    body{
-      margin:0;
-      font-family: Arial, sans-serif;
-      color: var(--text);
-      ound:url('<backgr?= h($bg) ?>') no-repeat center center fixed;      background-size: cover;
-    }
-
-    a{ color: #fff; }
-    a:hover{ color: #ffd86b; }
-
-    .backdrop{
-      min-height: 100vh;
-      background:
-        radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-        linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-      padding: 26px;
-      box-sizing: border-box;
-      display:flex;
-      justify-content:center;
-    }
-
-    .wrap{ width: min(1400px, 96vw); }
-
-    .topbar{
-      display:flex;
-      align-items:flex-end;
-      justify-content:space-between;
-      gap:16px;
-      flex-wrap:wrap;
-      margin-bottom: 14px;
-    }
-
-    .brand h1{ margin:0; font-size: 28px; letter-spacing: .5px; }
-    .brand .sub{ margin-top:6px; color: var(--muted); font-size: 14px; }
-
-    .userbox{
-      background: var(--glass);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px 14px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      min-width: 260px;
-    }
-    .userbox .line1{font-weight:bold}
-    .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
-
-    .panel{
-      margin-top: 10px;
-      border-radius: 20px;
-      border: 1px solid rgba(255,255,255,.18);
-      background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      padding: 18px;
-    }
-
-    .filters{
+  <link rel="stylesheet" href="/assets/css/main.css">
+<style>
+:root{
+  --danger: rgba(255, 120, 120, .22);
+  --ok: rgba(120, 255, 170, .22);
+  --warn: rgba(255, 216, 107, .22);
+}
+a{ color: #fff; }
+a:hover{ color: #ffd86b; }
+.wrap{ width: min(1400px, 96vw); }
+.filters{
       display:grid;
       grid-template-columns: repeat(12, 1fr);
       gap: 10px;
       margin-bottom: 14px;
       align-items:end;
     }
-    .f{ grid-column: span 3; }
-    .f2{ grid-column: span 2; }
-    .f4{ grid-column: span 4; }
-    .f6{ grid-column: span 6; }
-    .f12{ grid-column: span 12; }
-
-    @media (max-width: 1100px){
+.f{ grid-column: span 3; }
+.f2{ grid-column: span 2; }
+.f4{ grid-column: span 4; }
+.f6{ grid-column: span 6; }
+.f12{ grid-column: span 12; }
+@media (max-width: 1100px){
       .f, .f4, .f6 { grid-column: span 6; }
       .f2 { grid-column: span 3; }
     }
-    @media (max-width: 640px){
+@media (max-width: 640px){
       .filters{ grid-template-columns: repeat(6, 1fr); }
       .f, .f2, .f4, .f6 { grid-column: span 6; }
     }
-
-    label{ display:block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-    input, select{
+label{ display:block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+input, select{
       width:100%;
       box-sizing:border-box;
       border-radius: 12px;
@@ -227,15 +163,14 @@ function prettyJson($v): string {
       padding: 10px 10px;
       outline:none;
     }
-    input::placeholder{ color: rgba(255,255,255,.55); }
-
-    .btns{
+input::placeholder{ color: rgba(255,255,255,.55); }
+.btns{
       display:flex;
       gap:10px;
       flex-wrap:wrap;
       justify-content:flex-end;
     }
-    .btn{
+.btn{
       border-radius: 12px;
       border: 1px solid rgba(255,255,255,.22);
       background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08));
@@ -246,12 +181,11 @@ function prettyJson($v): string {
       text-decoration:none;
       display:inline-block;
     }
-    .btn:hover{
+.btn:hover{
       border-color: rgba(255,255,255,.38);
       background: linear-gradient(180deg, rgba(255,255,255,.24), rgba(255,255,255,.10));
     }
-
-    .meta{
+.meta{
       display:flex;
       gap:10px;
       flex-wrap:wrap;
@@ -261,27 +195,23 @@ function prettyJson($v): string {
       color: var(--muted);
       font-size: 13px;
     }
-
-    .tablewrap{
+.tablewrap{
       border-radius: 16px;
       border: 1px solid rgba(255,255,255,.18);
       overflow:hidden;
       background: rgba(0,0,0,.18);
     }
-
-    table{
+table{
       width:100%;
       border-collapse: collapse;
       font-size: 13px;
     }
-
-    th, td{
+th, td{
       padding: 10px 10px;
       border-bottom: 1px solid rgba(255,255,255,.10);
       vertical-align: top;
     }
-
-    th{
+th{
       text-align:left;
       font-size: 12px;
       letter-spacing: .3px;
@@ -293,12 +223,10 @@ function prettyJson($v): string {
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
     }
-
-    tr.data:hover td{
+tr.data:hover td{
       background: rgba(255,255,255,.06);
     }
-
-    .pill{
+.pill{
       display:inline-block;
       padding: 4px 8px;
       border-radius: 999px;
@@ -308,20 +236,18 @@ function prettyJson($v): string {
       font-weight: 700;
       white-space: nowrap;
     }
-    .pill.ok{ background: var(--ok); }
-    .pill.warn{ background: var(--warn); }
-    .pill.danger{ background: var(--danger); }
-
-    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    .muted{ color: var(--muted); }
-
-    .detailsRow{ display:none; }
-    .detailsBox{
+.pill.ok{ background: var(--ok); }
+.pill.warn{ background: var(--warn); }
+.pill.danger{ background: var(--danger); }
+.mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+.muted{ color: var(--muted); }
+.detailsRow{ display:none; }
+.detailsBox{
       padding: 12px;
       background: rgba(0,0,0,.25);
       border-top: 1px dashed rgba(255,255,255,.18);
     }
-    pre{
+pre{
       margin:0;
       white-space: pre-wrap;
       word-break: break-word;
@@ -329,8 +255,7 @@ function prettyJson($v): string {
       line-height: 1.35;
       color: rgba(255,255,255,.92);
     }
-
-    .pager{
+.pager{
       display:flex;
       gap:10px;
       flex-wrap:wrap;
@@ -338,20 +263,15 @@ function prettyJson($v): string {
       justify-content:space-between;
       margin-top: 12px;
     }
-    .pager .left, .pager .right{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .small{ font-size: 12px; color: var(--muted); }
-
-    .click{
+.pager .left, .pager .right{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.small{ font-size: 12px; color: var(--muted); }
+.click{
       cursor:pointer;
       user-select:none;
     }
-  a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
-  </style>
+</style>
 </head>
-<body>
+<body style="background-image:url('<backgr?= h($bg) ?>')">
   <div class="backdrop">
     <div class="wrap">
       <div class="topbar">

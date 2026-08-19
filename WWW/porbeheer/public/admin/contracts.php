@@ -208,14 +208,10 @@ include __DIR__ . '/../assets/includes/header.php';
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - Contractbeheer</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--shadow:0 14px 40px rgba(0,0,0,.45);}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);background:url('<?= h($bg) ?>') no-repeat center center fixed;background-size:cover;}
 .backdrop{min-height:100vh;background:radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88));padding:26px;box-sizing:border-box;display:flex;justify-content:center;}
-.wrap{width:min(1200px,96vw);}
-.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px;}
 .brand h1{margin:0;font-size:28px;}
-.brand .sub{margin-top:6px;color:var(--muted);font-size:14px;}
 .userbox{background:var(--glass);border:1px solid var(--border);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow);backdrop-filter:blur(10px);}
 .userbox a{color:#fff;text-decoration:none;margin-right:10px;}
 .panel{margin-top:10px;border-radius:20px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));box-shadow:var(--shadow);backdrop-filter:blur(12px);padding:18px;}
@@ -227,7 +223,7 @@ body{margin:0;font-family:Arial,sans-serif;color:var(--text);background:url('<?=
 .btn-success{background:linear-gradient(180deg,#28a745,#1e7e34);border-color:#34ce57;}
 .btn-warning{background:linear-gradient(180deg,#ffc107,#e0a800);border-color:#ffce3a;color:#333;}
 .msg{margin:8px 0;font-size:13px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);}
-.ok{color:#a3ffb3;} .err{color:#ffb3b3;}
+.ok{color:#a3ffb3;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 th,td{text-align:left;padding:10px 8px;border-bottom:1px solid rgba(255,255,255,.12);vertical-align:top;}
 th{color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.04em;}
@@ -238,7 +234,6 @@ th{color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;le
 .small{font-size:11px;color:var(--muted);}
 .upform{display:none;margin-top:8px;}
 .upform.open{display:block;}
-/* modal */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:1000;padding:18px;}
 .overlay.open{display:flex;}
 .modal{background:#0f172a;border:1px solid rgba(255,255,255,.2);border-radius:18px;padding:22px;max-width:380px;width:100%;text-align:center;color:#fff;}
@@ -247,7 +242,7 @@ th{color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;le
 .modal .url{font-size:11px;color:var(--muted);word-break:break-all;margin-bottom:10px;}
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop"><div class="wrap">
   <div class="topbar">
     <div class="brand"><h1>📑 Contractbeheer</h1><div class="sub">Sleutelcontracten zoeken, bekijken en getekende versies beheren</div></div>

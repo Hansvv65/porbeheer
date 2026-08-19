@@ -1,6 +1,26 @@
-<style>
+/* ===================================================================
+   Porbeheer — centrale stylesheet
+   -------------------------------------------------------------------
+   Gedeelde basis (kleuren, layout-shell, admin-componenten).
+
+   Niet-admin pagina's (login/register/forgot/...) hebben een eigen
+   visuele stijl en houden bewust hun eigen <style>-blok; zie de
+   toelichting daar. Achtergrondafbeelding wordt per pagina gezet via
+   style="background-image:url('...')" op <body>, omdat die vaak
+   dynamisch is (thema-variant of statische loginafbeelding).
+
+   Admin-componenten (a, .msg, .err, tabellen, .userbox, ...) staan
+   bewust genest onder .wrap, zodat ze nooit per ongeluk doorlekken
+   naar pagina's die geen .wrap-layout gebruiken.
+
+   Uitbreiden? Voeg alleen een regel hier toe als je hem letterlijk
+   (of vrijwel letterlijk) op 2+ pagina's ziet terugkomen. Bij twijfel
+   of een klasse ergens anders iets anders betekent: laat 'm lokaal
+   staan op de pagina en meld het conflict, in plaats van te mergen.
+   =================================================================== */
+
 :root{
-  --text:#ff0909;
+  --text:#fff;
   --muted:rgba(255,255,255,.78);
   --border:rgba(255,255,255,.22);
   --glass:rgba(255,255,255,.12);
@@ -12,11 +32,13 @@ body{
   margin:0;
   font-family:Arial,sans-serif;
   color:var(--text);
-  background:url('/assets/images/bands-a.png') no-repeat center center fixed;
+  background-repeat:no-repeat;
+  background-position:center center;
+  background-attachment:fixed;
   background-size:cover;
 }
 
-.overlay{
+.backdrop{
   min-height:100vh;
   background:
     radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
@@ -27,9 +49,11 @@ body{
   justify-content:center;
 }
 
+/* ---- Admin-shell: alles hieronder geldt alleen binnen .wrap ---- */
+
 .wrap{width:min(1200px,96vw);}
 
-.topbar{
+.wrap .topbar{
   display:flex;
   align-items:flex-end;
   justify-content:space-between;
@@ -38,10 +62,15 @@ body{
   margin-bottom:14px;
 }
 
-.brand h1{margin:0;font-size:28px;letter-spacing:.5px}
-.brand .sub{margin-top:6px;color:var(--muted);font-size:14px}
+.wrap .brand h1{margin:0;font-size:28px;letter-spacing:.5px}
+.wrap .brand .sub{margin-top:6px;color:var(--muted);font-size:14px}
+.wrap .brand .sub a{color:#fff;text-decoration:none}
+.wrap .brand .sub a:hover{color:#ffd9b3}
 
-.userbox{
+.wrap h2{margin:0 0 8px 0;font-size:18px}
+.wrap .small{font-size:13px;color:var(--muted)}
+
+.wrap .userbox{
   background:var(--glass);
   border:1px solid var(--border);
   border-radius:14px;
@@ -51,10 +80,10 @@ body{
   -webkit-backdrop-filter:blur(10px);
   min-width:260px;
 }
-.userbox .line1{font-weight:bold}
-.userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
+.wrap .userbox .line1{font-weight:bold}
+.wrap .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
 
-.panel{
+.wrap .panel{
   margin-top:10px;
   border-radius:20px;
   border:1px solid rgba(255,255,255,.18);
@@ -65,55 +94,27 @@ body{
   padding:18px;
 }
 
-.actionsbar{
-  display:flex;
-  justify-content:flex-end;
-  gap:10px;
-  flex-wrap:wrap;
-  margin-bottom:12px;
-}
-
-.btn{
-  display:inline-block;
-  text-decoration:none;
-  color:#f2f2f2;
-  font-weight:800;
-  padding:10px 14px;
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,.22);
-  background:linear-gradient(180deg, var(--glass), var(--glass2));
-}
-.btn:hover{border-color:rgba(255,255,255,.38);transform:translateY(-1px)}
-
-.tablewrap{
-  overflow:auto;
-  border-radius:14px;
-  border:1px solid rgba(255,255,255,.12);
-}
-
-table{width:100%;border-collapse:collapse}
-th,td{
-  padding:12px;
+.wrap .tablewrap{overflow:auto;border-radius:14px;border:1px solid rgba(255,255,255,.12)}
+.wrap table{width:100%;border-collapse:collapse}
+.wrap th, .wrap td{
+  padding:10px;
   border-bottom:1px solid rgba(255,255,255,.12);
+  text-align:left;
   font-size:14px;
   vertical-align:top;
 }
-th{text-align:left;background:rgba(255,255,255,.06)}
-tr:hover{background:rgba(255,255,255,.05)}
+.wrap th{background:rgba(255,255,255,.06)}
 
-.small{font-size:13px;color:var(--muted)}
-.badge{
-  display:inline-block;
-  padding:2px 8px;
-  border-radius:999px;
+.wrap a{color:#fff;text-decoration:none;transition:color .15s ease}
+.wrap a:hover{color:#ffd9b3}
+.wrap a:visited{color:#ffe0c2}
+
+.wrap .msg{
+  margin:10px 0;
+  font-size:13px;
+  padding:10px 12px;
+  border-radius:10px;
   border:1px solid rgba(255,255,255,.18);
   background:rgba(255,255,255,.08);
-  font-size:12px;
-  margin-right:6px;
-  white-space:nowrap;
 }
-
-a{color:#fff;text-decoration:none;transition:color .15s ease}
-a:hover{color:#ffd9b3}
-a:visited{color:#ffe0c2}
-</style>
+.wrap .err{color:#ffb3b3}

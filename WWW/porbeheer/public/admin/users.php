@@ -11,8 +11,6 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
 
-function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-
 $show = (string)($_GET['show'] ?? 'active'); // active|all|deleted
 $show = in_array($show, ['active','all','deleted'], true) ? $show : 'active';
 
@@ -60,37 +58,14 @@ function fullName($u): string {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Porbeheer - Gebruikers</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-  :root{
-    --text:#fff; --muted:rgba(255,255,255,.78);
-    --border:rgba(255,255,255,.22);
-    --glass:rgba(255,255,255,.12);
-    --shadow:0 14px 40px rgba(0,0,0,.45);
-    --ok:#7CFFB2; --err:#FF8DA1; --accent:#ffd86b;
-  }
-  body{
-    margin:0; font-family:Arial,sans-serif; color:var(--text);
-    background:url('<?= h($bg) ?>') no-repeat center center fixed;
-    background-size:cover;
-  }
-  .backdrop{
-    min-height:100vh;
-    background:
-      radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-      linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-    padding:26px; box-sizing:border-box;
-    display:flex; justify-content:center;
-  }
-  .wrap{ width:min(1200px, 96vw); }
-
-  .topbar{
-    display:flex; align-items:flex-end; justify-content:space-between;
-    gap:16px; flex-wrap:wrap; margin-bottom:14px;
-  }
-  .brand h1{ margin:0; font-size:28px; letter-spacing:.5px; }
-  .brand .sub{ margin-top:6px; color:var(--muted); font-size:14px; }
-
-  .userbox{
+:root{
+  --accent: #ffd86b;
+  --err: #FF8DA1;
+  --ok: #7CFFB2;
+}
+.userbox{
     background:var(--glass);
     border:1px solid var(--border);
     border-radius:14px;
@@ -99,13 +74,10 @@ function fullName($u): string {
     backdrop-filter:blur(10px);
     min-width:260px;
   }
-  .userbox .line1{font-weight:bold}
-  .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
-  a{ color:#fff; text-decoration:none; }
-  a:visited{ color:var(--accent); }
-  a:hover{ opacity:.95; }
-
-  .panel{
+a{ color:#fff; text-decoration:none; }
+a:visited{ color:var(--accent); }
+a:hover{ opacity:.95; }
+.panel{
     margin-top:10px;
     border-radius:20px;
     border:1px solid rgba(255,255,255,.18);
@@ -114,13 +86,12 @@ function fullName($u): string {
     backdrop-filter:blur(12px);
     padding:18px;
   }
-
-  .headerrow{
+.headerrow{
     display:flex; align-items:center; justify-content:space-between;
     gap:12px; flex-wrap:wrap; margin-bottom:10px;
   }
-  .filters{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-  .chip{
+.filters{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.chip{
     display:inline-block;
     padding:8px 10px;
     border-radius:999px;
@@ -129,19 +100,18 @@ function fullName($u): string {
     font-weight:800;
     font-size:13px;
   }
-  .chip.on{
+.chip.on{
     border-color: rgba(124,255,178,.35);
     background: rgba(124,255,178,.10);
     color: var(--ok);
   }
-
-  .list{
+.list{
     display:flex;
     flex-direction:column;
     gap:12px;
     margin-top:10px;
   }
-  .card{
+.card{
     display:block;
     border-radius:18px;
     border:1px solid rgba(255,255,255,.18);
@@ -151,13 +121,12 @@ function fullName($u): string {
     backdrop-filter: blur(10px);
     transition: transform .12s ease, background .12s ease;
   }
-  .card:hover{ transform: translateY(-1px); background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.30); }
-  .row1{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; }
-  .who{ font-weight:900; letter-spacing:.2px; }
-  .meta{ color:var(--muted); font-size:13px; }
-  .badges{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-
-  .badge{
+.card:hover{ transform: translateY(-1px); background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.30); }
+.row1{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; }
+.who{ font-weight:900; letter-spacing:.2px; }
+.meta{ color:var(--muted); font-size:13px; }
+.badges{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.badge{
     display:inline-block;
     padding:3px 10px;
     border-radius:999px;
@@ -166,31 +135,30 @@ function fullName($u): string {
     font-weight:900;
     font-size:12px;
   }
-  .badge.ok{ border-color:rgba(124,255,178,.35); color:var(--ok); background:rgba(124,255,178,.10); }
-  .badge.off{ border-color:rgba(255,141,161,.35); color:var(--err); background:rgba(255,141,161,.10); }
-  .badge.warn{ border-color:rgba(255,216,107,.35); color:var(--accent); background:rgba(255,216,107,.10); }
-
-  .grid{
+.badge.ok{ border-color:rgba(124,255,178,.35); color:var(--ok); background:rgba(124,255,178,.10); }
+.badge.off{ border-color:rgba(255,141,161,.35); color:var(--err); background:rgba(255,141,161,.10); }
+.badge.warn{ border-color:rgba(255,216,107,.35); color:var(--accent); background:rgba(255,216,107,.10); }
+.grid{
     margin-top:10px;
     display:grid;
     grid-template-columns: 1.2fr 1fr 1fr;
     gap:10px;
   }
-  @media (max-width: 900px){
+@media (max-width: 900px){
     .grid{ grid-template-columns: 1fr; }
   }
-  .box{
+.box{
     border-radius:14px;
     border:1px solid rgba(255,255,255,.14);
     background:rgba(0,0,0,.12);
     padding:10px 12px;
   }
-  .label{ color:var(--muted); font-size:12px; font-weight:800; }
-  .value{ margin-top:4px; font-weight:900; }
-  .small{ margin-top:6px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+.label{ color:var(--muted); font-size:12px; font-weight:800; }
+.value{ margin-top:4px; font-weight:900; }
+.small{ margin-top:6px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop">
   <div class="wrap">
 
