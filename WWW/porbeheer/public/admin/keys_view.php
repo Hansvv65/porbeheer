@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('sleutels', 'read');
 
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) {

@@ -1,0 +1,1594 @@
+============================================================
+DATABASE SCHEMA OVERZICHT
+============================================================
+Versie (DB)     : 8.0.46-0ubuntu0.24.04.3
+Database        : porbeheer
+Gegenereerd op  : 2026-08-26 06:46:13
+Aantal tabellen : 27
+
+============================================================
+1. SAMENVATTING
+============================================================
+- Aantal tabellen: 27
+- Aantal views: 0
+- Aantal triggers: 1
+- Aantal routines: 0
+- Aantal foreign keys: 44
+- Er zijn 2 kolommen gevonden die op _id eindigen zonder foreign key. Mogelijk ontbreken daar relationele constraints.
+- Tabel audit_log: wel created_at maar geen updated_at.
+- Tabel band_contacts: wel created_at maar geen updated_at.
+- Tabel band_contracts: wel created_at maar geen updated_at.
+- Tabel band_planner_events: wel created_at maar geen updated_at.
+- Tabel bands: gebruikt soft delete via deleted_at.
+- Tabel bookings: wel created_at maar geen updated_at.
+- Tabel budget_items: gebruikt soft delete via deleted_at.
+- Tabel changelog_items: wel created_at maar geen updated_at.
+- Tabel changelog_versions: wel created_at maar geen updated_at.
+- Tabel contacts: gebruikt soft delete via deleted_at.
+- Tabel finance_accounts: gebruikt soft delete via deleted_at.
+- Tabel key_contract_documents: gebruikt soft delete via deleted_at.
+- Tabel key_contract_upload_tokens: wel created_at maar geen updated_at.
+- Tabel key_contracts: wel created_at maar geen updated_at.
+- Tabel keys: gebruikt soft delete via deleted_at.
+- Tabel lockers: wel created_at maar geen updated_at.
+- Tabel lockers: gebruikt soft delete via deleted_at.
+- Tabel login_audit: wel created_at maar geen updated_at.
+- Tabel transactions: wel created_at maar geen updated_at.
+- Tabel transactions: gebruikt soft delete via deleted_at.
+- Tabel users: gebruikt soft delete via deleted_at.
+
+============================================================
+2. TABELLEN
+============================================================
+------------------------------------------------------------
+TABEL: app_settings
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_0900_ai_ci
+Rows(est) : 4
+Created   : 2026-02-24 20:52:16
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   key                         varchar(64)                 NO      PRI     NULL                
+2   value                       varchar(255)                NO              NULL                
+3   updated_at                  datetime                    NO              CURRENT_TIMESTAMP   DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+
+INDEXEN
+- PRIMARY [UNIQUE] : key
+
+FOREIGN KEYS
+- geen
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `app_settings` (
+  `key` varchar(64) NOT NULL,
+  `value` varchar(255) NOT NULL,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+
+------------------------------------------------------------
+TABEL: audit_log
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 3508
+Created   : 2026-02-28 07:23:48
+Updated   : 2026-08-26 04:46:13
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   user_id                     int                         YES     MUL     NULL                
+3   username                    varchar(50)                 YES             NULL                
+4   role                        varchar(20)                 YES             NULL                
+5   event_type                  varchar(30)                 NO      MUL     NULL                
+6   event_name                  varchar(80)                 NO              NULL                
+7   method                      varchar(10)                 YES             NULL                
+8   path                        varchar(255)                YES             NULL                
+9   details                     json                        YES             NULL                
+10  ip                          varchar(45)                 YES             NULL                
+11  user_agent                  varchar(255)                YES             NULL                
+12  created_at                  datetime                    NO      MUL     CURRENT_TIMESTAMP   DEFAULT_GENERATED
+
+INDEXEN
+- idx_audit_created [NON_UNIQUE] : created_at
+- idx_audit_login [NON_UNIQUE] : event_type, user_id, created_at
+- idx_audit_user [NON_UNIQUE] : user_id
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- geen
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `audit_log` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int DEFAULT NULL,
+  `username` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `role` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `event_type` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `event_name` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `method` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `details` json DEFAULT NULL,
+  `ip` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_agent` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_audit_user` (`user_id`),
+  KEY `idx_audit_created` (`created_at`),
+  KEY `idx_audit_login` (`event_type`,`user_id`,`created_at`)
+) ENGINE=InnoDB AUTO_INCREMENT=3644 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: band_contacts
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 0
+Created   : 2026-02-15 16:51:13
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   band_id                     int                         NO      PRI     NULL                
+2   contact_id                  int                         NO      PRI     NULL                
+3   contact_role                varchar(100)                YES             NULL                
+4   created_at                  datetime                    YES             CURRENT_TIMESTAMP   DEFAULT_GENERATED
+
+INDEXEN
+- fk_bc_contact [NON_UNIQUE] : contact_id
+- PRIMARY [UNIQUE] : band_id, contact_id
+
+FOREIGN KEYS
+- fk_bc_band : band_id -> bands.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+- fk_bc_contact : contact_id -> contacts.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `band_contacts` (
+  `band_id` int NOT NULL,
+  `contact_id` int NOT NULL,
+  `contact_role` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`band_id`,`contact_id`),
+  KEY `fk_bc_contact` (`contact_id`),
+  CONSTRAINT `fk_bc_band` FOREIGN KEY (`band_id`) REFERENCES `bands` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_bc_contact` FOREIGN KEY (`contact_id`) REFERENCES `contacts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: band_contracts
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 7
+Created   : 2026-02-22 11:47:28
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   band_id                     int                         NO      MUL     NULL                
+3   contract_type               enum('ABONNEMENT','INCIDENTEEL')NO              NULL                
+4   start_date                  date                        NO              NULL                
+5   end_date                    date                        NO              NULL                
+6   monthly_fee                 decimal(10,2)               YES             0.00                
+7   document_path               varchar(255)                YES             NULL                
+8   created_at                  datetime                    YES             CURRENT_TIMESTAMP   DEFAULT_GENERATED
+
+INDEXEN
+- band_id [NON_UNIQUE] : band_id
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- band_contracts_ibfk_1 : band_id -> bands.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+
+ENUM WAARDEN
+- contract_type : ABONNEMENT, INCIDENTEEL
+
+CREATE TABLE
+CREATE TABLE `band_contracts` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `band_id` int NOT NULL,
+  `contract_type` enum('ABONNEMENT','INCIDENTEEL') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `start_date` date NOT NULL,
+  `end_date` date NOT NULL,
+  `monthly_fee` decimal(10,2) DEFAULT '0.00',
+  `document_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `band_id` (`band_id`),
+  CONSTRAINT `band_contracts_ibfk_1` FOREIGN KEY (`band_id`) REFERENCES `bands` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: band_invoices
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_0900_ai_ci
+Rows(est) : 0
+Created   : 2026-02-24 20:52:17
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   band_id                     int                         NO      MUL     NULL                
+3   period_start                date                        NO              NULL                
+4   kind                        enum('monthly','incidental')NO              monthly             
+5   amount                      decimal(10,2)               NO              NULL                
+6   description                 varchar(255)                YES             NULL                
+7   due_date                    date                        NO      MUL     NULL                
+8   status                      enum('open','paid','void')  NO      MUL     open                
+9   paid_transaction_id         int                         YES     MUL     NULL                
+10  created_by                  int                         YES     MUL     NULL                
+11  created_at                  datetime                    NO              CURRENT_TIMESTAMP   DEFAULT_GENERATED
+12  updated_at                  datetime                    NO              CURRENT_TIMESTAMP   DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+
+INDEXEN
+- fk_inv_created_by [NON_UNIQUE] : created_by
+- idx_band [NON_UNIQUE] : band_id
+- idx_due [NON_UNIQUE] : due_date
+- idx_paid_trx [NON_UNIQUE] : paid_transaction_id
+- idx_status [NON_UNIQUE] : status
+- PRIMARY [UNIQUE] : id
+- uq_band_period_kind [UNIQUE] : band_id, period_start, kind
+
+FOREIGN KEYS
+- fk_inv_band : band_id -> bands.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+- fk_inv_created_by : created_by -> users.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+- fk_inv_paid_trx : paid_transaction_id -> transactions.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+
+ENUM WAARDEN
+- kind : monthly, incidental
+- status : open, paid, void
+
+CREATE TABLE
+CREATE TABLE `band_invoices` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `band_id` int NOT NULL,
+  `period_start` date NOT NULL,
+  `kind` enum('monthly','incidental') NOT NULL DEFAULT 'monthly',
+  `amount` decimal(10,2) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  `due_date` date NOT NULL,
+  `status` enum('open','paid','void') NOT NULL DEFAULT 'open',
+  `paid_transaction_id` int DEFAULT NULL,
+  `created_by` int DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_band_period_kind` (`band_id`,`period_start`,`kind`),
+  KEY `idx_status` (`status`),
+  KEY `idx_due` (`due_date`),
+  KEY `idx_band` (`band_id`),
+  KEY `idx_paid_trx` (`paid_transaction_id`),
+  KEY `fk_inv_created_by` (`created_by`),
+  CONSTRAINT `fk_inv_band` FOREIGN KEY (`band_id`) REFERENCES `bands` (`id`),
+  CONSTRAINT `fk_inv_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_inv_paid_trx` FOREIGN KEY (`paid_transaction_id`) REFERENCES `transactions` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+
+------------------------------------------------------------
+TABEL: band_keys
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 1
+Created   : 2026-02-14 22:30:13
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   band_id                     int                         NO      PRI     NULL                
+2   key_id                      int                         NO      PRI     NULL                
+3   assigned_at                 timestamp                   YES             CURRENT_TIMESTAMP   DEFAULT_GENERATED
+
+INDEXEN
+- fk_bandkeys_key [NON_UNIQUE] : key_id
+- PRIMARY [UNIQUE] : band_id, key_id
+
+FOREIGN KEYS
+- fk_bandkeys_band : band_id -> bands.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+- fk_bandkeys_key : key_id -> keys.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `band_keys` (
+  `band_id` int NOT NULL,
+  `key_id` int NOT NULL,
+  `assigned_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`band_id`,`key_id`),
+  KEY `fk_bandkeys_key` (`key_id`),
+  CONSTRAINT `fk_bandkeys_band` FOREIGN KEY (`band_id`) REFERENCES `bands` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_bandkeys_key` FOREIGN KEY (`key_id`) REFERENCES `keys` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: band_planner_events
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 169
+Created   : 2026-02-23 15:25:22
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   band_id                     int                         NO      MUL     NULL                
+3   contract_id                 int                         NO      MUL     NULL                
+4   event_date                  date                        NO              NULL                
+5   daypart                     enum('OCHTEND','MIDDAG','AVOND')NO              NULL                
+6   start_time                  time                        NO              NULL                
+7   end_time                    time                        NO              NULL                
+8   created_at                  datetime                    YES             CURRENT_TIMESTAMP   DEFAULT_GENERATED
+
+INDEXEN
+- idx_band_date [NON_UNIQUE] : band_id, event_date
+- idx_contract [NON_UNIQUE] : contract_id
+- PRIMARY [UNIQUE] : id
+- uq_contract_occurrence [UNIQUE] : contract_id, event_date, daypart
+
+FOREIGN KEYS
+- fk_bpe_band : band_id -> bands.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+- fk_bpe_contract : contract_id -> band_contracts.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+
+ENUM WAARDEN
+- daypart : OCHTEND, MIDDAG, AVOND
+
+CREATE TABLE
+CREATE TABLE `band_planner_events` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `band_id` int NOT NULL,
+  `contract_id` int NOT NULL,
+  `event_date` date NOT NULL,
+  `daypart` enum('OCHTEND','MIDDAG','AVOND') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `start_time` time NOT NULL,
+  `end_time` time NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_contract_occurrence` (`contract_id`,`event_date`,`daypart`),
+  KEY `idx_band_date` (`band_id`,`event_date`),
+  KEY `idx_contract` (`contract_id`),
+  CONSTRAINT `fk_bpe_band` FOREIGN KEY (`band_id`) REFERENCES `bands` (`id`),
+  CONSTRAINT `fk_bpe_contract` FOREIGN KEY (`contract_id`) REFERENCES `band_contracts` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=248 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: bands
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 15
+Created   : 2026-02-18 16:38:03
+Updated   : 2026-08-26 04:42:39
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   name                        varchar(100)                NO              NULL                
+3   contact_name                varchar(100)                YES             NULL                
+4   email                       varchar(100)                YES             NULL                
+5   phone                       varchar(30)                 YES             NULL                
+6   address                     text                        YES             NULL                
+7   iban                        varchar(34)                 YES             NULL                
+8   city                        varchar(100)                YES             NULL                
+9   primary_contact_id          int                         YES     MUL     NULL                
+10  secondary_contact_id        int                         YES     MUL     NULL                
+11  monthly_fee                 decimal(10,2)               YES             0.00                
+12  is_subscription_active      tinyint(1)                  YES             1                   
+13  deleted_at                  datetime                    YES     MUL     NULL                
+14  deleted_by_user_id          int                         YES     MUL     NULL                
+
+INDEXEN
+- fk_bands_deleted_by [NON_UNIQUE] : deleted_by_user_id
+- fk_bands_primary_contact [NON_UNIQUE] : primary_contact_id
+- fk_bands_secondary_contact [NON_UNIQUE] : secondary_contact_id
+- idx_bands_deleted_at [NON_UNIQUE] : deleted_at
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- fk_bands_deleted_by : deleted_by_user_id -> users.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+- fk_bands_primary_contact : primary_contact_id -> contacts.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+- fk_bands_secondary_contact : secondary_contact_id -> contacts.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `bands` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `contact_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `email` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `phone` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `address` text COLLATE utf8mb4_unicode_ci,
+  `iban` varchar(34) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `city` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `primary_contact_id` int DEFAULT NULL,
+  `secondary_contact_id` int DEFAULT NULL,
+  `monthly_fee` decimal(10,2) DEFAULT '0.00',
+  `is_subscription_active` tinyint(1) DEFAULT '1',
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by_user_id` int DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `fk_bands_primary_contact` (`primary_contact_id`),
+  KEY `fk_bands_secondary_contact` (`secondary_contact_id`),
+  KEY `idx_bands_deleted_at` (`deleted_at`),
+  KEY `fk_bands_deleted_by` (`deleted_by_user_id`),
+  CONSTRAINT `fk_bands_deleted_by` FOREIGN KEY (`deleted_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_bands_primary_contact` FOREIGN KEY (`primary_contact_id`) REFERENCES `contacts` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_bands_secondary_contact` FOREIGN KEY (`secondary_contact_id`) REFERENCES `contacts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: bookings
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 0
+Created   : 2026-02-19 19:56:32
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   slot_date                   date                        NO      MUL     NULL                
+3   daypart                     tinyint                     NO              NULL                
+4   band_id                     int                         NO      MUL     NULL                
+5   created_by                  int                         NO      MUL     NULL                
+6   created_at                  datetime                    NO              CURRENT_TIMESTAMP   DEFAULT_GENERATED
+
+INDEXEN
+- idx_band [NON_UNIQUE] : band_id
+- idx_created_by [NON_UNIQUE] : created_by
+- idx_slot_date [NON_UNIQUE] : slot_date
+- PRIMARY [UNIQUE] : id
+- uniq_slot [UNIQUE] : slot_date, daypart
+
+FOREIGN KEYS
+- fk_booking_band : band_id -> bands.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+- fk_booking_user : created_by -> users.id (ON UPDATE NO ACTION, ON DELETE RESTRICT)
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `bookings` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `slot_date` date NOT NULL,
+  `daypart` tinyint NOT NULL,
+  `band_id` int NOT NULL,
+  `created_by` int NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_slot` (`slot_date`,`daypart`),
+  KEY `idx_slot_date` (`slot_date`),
+  KEY `idx_band` (`band_id`),
+  KEY `idx_created_by` (`created_by`),
+  CONSTRAINT `fk_booking_band` FOREIGN KEY (`band_id`) REFERENCES `bands` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_booking_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: budget_items
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_0900_ai_ci
+Rows(est) : 0
+Created   : 2026-02-24 20:52:16
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   name                        varchar(120)                NO              NULL                
+3   kind                        enum('income','expense','both')NO      MUL     expense             
+4   annual_amount               decimal(10,2)               NO              0.00                
+5   notes                       text                        YES             NULL                
+6   is_active                   tinyint(1)                  NO      MUL     1                   
+7   deleted_at                  datetime                    YES     MUL     NULL                
+8   deleted_by_user_id          int                         YES     MUL     NULL                
+9   created_at                  datetime                    NO              CURRENT_TIMESTAMP   DEFAULT_GENERATED
+10  updated_at                  datetime                    NO              CURRENT_TIMESTAMP   DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+
+INDEXEN
+- idx_active [NON_UNIQUE] : is_active
+- idx_deleted_at [NON_UNIQUE] : deleted_at
+- idx_deleted_by [NON_UNIQUE] : deleted_by_user_id
+- idx_kind [NON_UNIQUE] : kind
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- fk_budget_deleted_by_user : deleted_by_user_id -> users.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+
+ENUM WAARDEN
+- kind : income, expense, both
+
+CREATE TABLE
+CREATE TABLE `budget_items` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(120) NOT NULL,
+  `kind` enum('income','expense','both') NOT NULL DEFAULT 'expense',
+  `annual_amount` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `notes` text,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by_user_id` int DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_kind` (`kind`),
+  KEY `idx_active` (`is_active`),
+  KEY `idx_deleted_at` (`deleted_at`),
+  KEY `idx_deleted_by` (`deleted_by_user_id`),
+  CONSTRAINT `fk_budget_deleted_by_user` FOREIGN KEY (`deleted_by_user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+
+------------------------------------------------------------
+TABEL: changelog_items
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 14
+Created   : 2026-03-09 11:09:10
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   version_id                  int                         YES     MUL     NULL                
+3   type                        enum('NEW','IMPROVE','FIX','SECURITY','IDEA')NO              NEW                 
+4   description                 text                        NO              NULL                
+5   author_name                 varchar(100)                YES             NULL                
+6   created_at                  timestamp                   YES             CURRENT_TIMESTAMP   DEFAULT_GENERATED
+
+INDEXEN
+- fk_changelog_items_version [NON_UNIQUE] : version_id
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- changelog_items_ibfk_1 : version_id -> changelog_versions.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+- fk_changelog_items_version : version_id -> changelog_versions.id (ON UPDATE CASCADE, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- type : NEW, IMPROVE, FIX, SECURITY, IDEA
+
+CREATE TABLE
+CREATE TABLE `changelog_items` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `version_id` int DEFAULT NULL,
+  `type` enum('NEW','IMPROVE','FIX','SECURITY','IDEA') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'NEW',
+  `description` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `author_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `fk_changelog_items_version` (`version_id`),
+  CONSTRAINT `changelog_items_ibfk_1` FOREIGN KEY (`version_id`) REFERENCES `changelog_versions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_changelog_items_version` FOREIGN KEY (`version_id`) REFERENCES `changelog_versions` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: changelog_versions
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 0
+Created   : 2026-03-08 16:38:09
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   version                     varchar(20)                 NO              NULL                
+3   release_date                date                        YES             NULL                
+4   created_at                  timestamp                   YES             CURRENT_TIMESTAMP   DEFAULT_GENERATED
+
+INDEXEN
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- geen
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `changelog_versions` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `version` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `release_date` date DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: contacts
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 8
+Created   : 2026-05-27 11:10:57
+Updated   : 2026-08-26 04:41:30
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   first_name                  varchar(100)                NO              ''                  
+3   tussenvoegsel               varchar(50)                 YES             NULL                
+4   aanhef                      varchar(10)                 YES             NULL                
+5   last_name                   varchar(100)                NO              ''                  
+6   name                        varchar(100)                NO              NULL                
+7   email                       varchar(150)                YES             NULL                
+8   phone                       varchar(50)                 YES             NULL                
+9   notes                       text                        YES             NULL                
+10  created_at                  datetime                    YES             CURRENT_TIMESTAMP   DEFAULT_GENERATED
+11  updated_at                  datetime                    YES             CURRENT_TIMESTAMP   DEFAULT_GENERATED on update CURRENT_TIMESTAMP
+12  deleted_at                  datetime                    YES     MUL     NULL                
+13  deleted_by_user_id          int                         YES     MUL     NULL                
+
+INDEXEN
+- fk_contacts_deleted_by [NON_UNIQUE] : deleted_by_user_id
+- idx_contacts_deleted_at [NON_UNIQUE] : deleted_at
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- fk_contacts_deleted_by : deleted_by_user_id -> users.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `contacts` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `first_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `tussenvoegsel` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `aanhef` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `last_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `email` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `phone` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by_user_id` int DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_contacts_deleted_at` (`deleted_at`),
+  KEY `fk_contacts_deleted_by` (`deleted_by_user_id`),
+  CONSTRAINT `fk_contacts_deleted_by` FOREIGN KEY (`deleted_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: finance_accounts
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_0900_ai_ci
+Rows(est) : 0
+Created   : 2026-02-24 20:52:16
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   name                        varchar(80)                 NO              NULL                
+3   iban                        varchar(34)                 YES             NULL                
+4   type                        enum('bank','cash','other') NO              bank                
+5   opening_balance             decimal(10,2)               NO              0.00                
+6   is_default                  tinyint(1)                  NO              0                   
+7   deleted_at                  datetime                    YES     MUL     NULL                
+
+INDEXEN
+- idx_deleted_at [NON_UNIQUE] : deleted_at
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- geen
+
+ENUM WAARDEN
+- type : bank, cash, other
+
+CREATE TABLE
+CREATE TABLE `finance_accounts` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(80) NOT NULL,
+  `iban` varchar(34) DEFAULT NULL,
+  `type` enum('bank','cash','other') NOT NULL DEFAULT 'bank',
+  `opening_balance` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `is_default` tinyint(1) NOT NULL DEFAULT '0',
+  `deleted_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+
+------------------------------------------------------------
+TABEL: key_contract_documents
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 4
+Created   : 2026-06-17 11:40:02
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   key_contract_id             int                         NO      MUL     NULL                
+3   kind                        enum('GENERATED','SIGNED')  NO      MUL     SIGNED              
+4   source                      enum('ADMIN_UPLOAD','QR_UPLOAD','GENERATED')NO              ADMIN_UPLOAD        
+5   original_name               varchar(255)                YES             NULL                
+6   stored_path                 varchar(500)                NO              NULL                
+7   mime_type                   varchar(100)                NO              application/pdf     
+8   size_bytes                  int                         NO              0                   
+9   sha256                      char(64)                    YES             NULL                
+10  page_count                  int                         YES             NULL                
+11  uploaded_at                 datetime                    NO              CURRENT_TIMESTAMP   DEFAULT_GENERATED
+12  uploaded_by_user_id         int                         YES     MUL     NULL                
+13  upload_token_id             int                         YES     MUL     NULL                
+14  is_current                  tinyint(1)                  NO      MUL     1                   
+15  deleted_at                  datetime                    YES             NULL                
+
+INDEXEN
+- fk_kcdoc_token [NON_UNIQUE] : upload_token_id
+- fk_kcdoc_user [NON_UNIQUE] : uploaded_by_user_id
+- idx_kcdoc_contract [NON_UNIQUE] : key_contract_id
+- idx_kcdoc_current [NON_UNIQUE] : is_current
+- idx_kcdoc_kind [NON_UNIQUE] : kind
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- fk_kcdoc_contract : key_contract_id -> key_contracts.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+- fk_kcdoc_token : upload_token_id -> key_contract_upload_tokens.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+- fk_kcdoc_user : uploaded_by_user_id -> users.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- kind : GENERATED, SIGNED
+- source : ADMIN_UPLOAD, QR_UPLOAD, GENERATED
+
+CREATE TABLE
+CREATE TABLE `key_contract_documents` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `key_contract_id` int NOT NULL,
+  `kind` enum('GENERATED','SIGNED') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'SIGNED',
+  `source` enum('ADMIN_UPLOAD','QR_UPLOAD','GENERATED') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ADMIN_UPLOAD',
+  `original_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `stored_path` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `mime_type` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'application/pdf',
+  `size_bytes` int NOT NULL DEFAULT '0',
+  `sha256` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `page_count` int DEFAULT NULL,
+  `uploaded_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `uploaded_by_user_id` int DEFAULT NULL,
+  `upload_token_id` int DEFAULT NULL,
+  `is_current` tinyint(1) NOT NULL DEFAULT '1',
+  `deleted_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_kcdoc_contract` (`key_contract_id`),
+  KEY `idx_kcdoc_kind` (`kind`),
+  KEY `idx_kcdoc_current` (`is_current`),
+  KEY `fk_kcdoc_token` (`upload_token_id`),
+  KEY `fk_kcdoc_user` (`uploaded_by_user_id`),
+  CONSTRAINT `fk_kcdoc_contract` FOREIGN KEY (`key_contract_id`) REFERENCES `key_contracts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_kcdoc_token` FOREIGN KEY (`upload_token_id`) REFERENCES `key_contract_upload_tokens` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_kcdoc_user` FOREIGN KEY (`uploaded_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: key_contract_upload_tokens
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 7
+Created   : 2026-06-17 11:40:02
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   key_contract_id             int                         NO      MUL     NULL                
+3   token                       char(64)                    NO      UNI     NULL                
+4   short_code                  varchar(12)                 NO      MUL     NULL                
+5   expires_at                  datetime                    NO      MUL     NULL                
+6   used_at                     datetime                    YES             NULL                
+7   created_at                  datetime                    NO              CURRENT_TIMESTAMP   DEFAULT_GENERATED
+8   created_by_user_id          int                         YES     MUL     NULL                
+9   ip                          varchar(45)                 YES             NULL                
+
+INDEXEN
+- fk_uptok_user [NON_UNIQUE] : created_by_user_id
+- idx_uptok_contract [NON_UNIQUE] : key_contract_id
+- idx_uptok_expires [NON_UNIQUE] : expires_at
+- idx_uptok_shortcode [NON_UNIQUE] : short_code
+- PRIMARY [UNIQUE] : id
+- uq_token [UNIQUE] : token
+
+FOREIGN KEYS
+- fk_uptok_contract : key_contract_id -> key_contracts.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+- fk_uptok_user : created_by_user_id -> users.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `key_contract_upload_tokens` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `key_contract_id` int NOT NULL,
+  `token` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `short_code` varchar(12) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `created_by_user_id` int DEFAULT NULL,
+  `ip` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_token` (`token`),
+  KEY `idx_uptok_contract` (`key_contract_id`),
+  KEY `idx_uptok_expires` (`expires_at`),
+  KEY `idx_uptok_shortcode` (`short_code`),
+  KEY `fk_uptok_user` (`created_by_user_id`),
+  CONSTRAINT `fk_uptok_contract` FOREIGN KEY (`key_contract_id`) REFERENCES `key_contracts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_uptok_user` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: key_contracts
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 4
+Created   : 2026-04-23 11:39:14
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   key_id                      int                         NO      MUL     NULL                
+3   contract_number             varchar(50)                 NO      MUL     NULL                
+4   contract_data               json                        YES             NULL                
+5   created_at                  datetime                    NO              NULL                
+6   band_contact_id             int                         YES     MUL     NULL                
+7   board_member_id             int                         YES     MUL     NULL                
+8   location                    varchar(255)                YES             NULL                
+9   locker_no                   varchar(50)                 YES             NULL                
+10  signed_contract_path        varchar(500)                YES             NULL                
+11  contract_pdf                longblob                    YES             NULL                
+12  contract_pdf_name           varchar(255)                YES             NULL                
+13  contract_pdf_mime           varchar(100)                YES             application/pdf     
+
+INDEXEN
+- idx_band_contact [NON_UNIQUE] : band_contact_id
+- idx_board_member [NON_UNIQUE] : board_member_id
+- idx_contract_number [NON_UNIQUE] : contract_number
+- idx_key_id [NON_UNIQUE] : key_id
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- key_contracts_ibfk_1 : key_id -> keys.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `key_contracts` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `key_id` int NOT NULL,
+  `contract_number` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `contract_data` json DEFAULT NULL,
+  `created_at` datetime NOT NULL,
+  `band_contact_id` int DEFAULT NULL,
+  `board_member_id` int DEFAULT NULL,
+  `location` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `locker_no` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `signed_contract_path` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `contract_pdf` longblob,
+  `contract_pdf_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `contract_pdf_mime` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT 'application/pdf',
+  PRIMARY KEY (`id`),
+  KEY `idx_contract_number` (`contract_number`),
+  KEY `idx_key_id` (`key_id`),
+  KEY `idx_band_contact` (`band_contact_id`),
+  KEY `idx_board_member` (`board_member_id`),
+  CONSTRAINT `key_contracts_ibfk_1` FOREIGN KEY (`key_id`) REFERENCES `keys` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: key_transaction_docs
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 0
+Created   : 2026-02-14 22:39:33
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   transaction_id              int                         NO      UNI     NULL                
+3   original_name               varchar(255)                NO              NULL                
+4   stored_name                 varchar(255)                NO              NULL                
+5   mime_type                   varchar(100)                NO              NULL                
+6   size_bytes                  int                         NO              NULL                
+7   uploaded_at                 datetime                    NO              CURRENT_TIMESTAMP   DEFAULT_GENERATED
+8   uploaded_by_user_id         int                         YES     MUL     NULL                
+
+INDEXEN
+- fk_ktd_user [NON_UNIQUE] : uploaded_by_user_id
+- PRIMARY [UNIQUE] : id
+- uniq_tx_doc [UNIQUE] : transaction_id
+
+FOREIGN KEYS
+- fk_ktd_tx : transaction_id -> key_transactions.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+- fk_ktd_user : uploaded_by_user_id -> users.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `key_transaction_docs` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `transaction_id` int NOT NULL,
+  `original_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `stored_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `mime_type` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `size_bytes` int NOT NULL,
+  `uploaded_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `uploaded_by_user_id` int DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_tx_doc` (`transaction_id`),
+  KEY `fk_ktd_user` (`uploaded_by_user_id`),
+  CONSTRAINT `fk_ktd_tx` FOREIGN KEY (`transaction_id`) REFERENCES `key_transactions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ktd_user` FOREIGN KEY (`uploaded_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: key_transactions
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 10
+Created   : 2026-02-18 13:42:31
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   band_id                     int                         NO      MUL     NULL                
+3   key_id                      int                         NO      MUL     NULL                
+4   contact_id                  int                         YES     MUL     NULL                
+5   action                      enum('ISSUE','RETURN')      NO              NULL                
+6   action_at                   datetime                    NO      MUL     CURRENT_TIMESTAMP   DEFAULT_GENERATED
+7   performed_by_user_id        int                         YES     MUL     NULL                
+8   notes                       varchar(255)                YES             NULL                
+
+INDEXEN
+- fk_kt_user [NON_UNIQUE] : performed_by_user_id
+- idx_keytx_contact [NON_UNIQUE] : contact_id
+- idx_kt_actionat [NON_UNIQUE] : action_at
+- idx_kt_band [NON_UNIQUE] : band_id
+- idx_kt_key [NON_UNIQUE] : key_id
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- fk_keytx_contact : contact_id -> contacts.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+- fk_kt_band : band_id -> bands.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+- fk_kt_key : key_id -> keys.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+- fk_kt_user : performed_by_user_id -> users.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- action : ISSUE, RETURN
+
+CREATE TABLE
+CREATE TABLE `key_transactions` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `band_id` int NOT NULL,
+  `key_id` int NOT NULL,
+  `contact_id` int DEFAULT NULL,
+  `action` enum('ISSUE','RETURN') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `action_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `performed_by_user_id` int DEFAULT NULL,
+  `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `fk_kt_user` (`performed_by_user_id`),
+  KEY `idx_kt_band` (`band_id`),
+  KEY `idx_kt_key` (`key_id`),
+  KEY `idx_kt_actionat` (`action_at`),
+  KEY `idx_keytx_contact` (`contact_id`),
+  CONSTRAINT `fk_keytx_contact` FOREIGN KEY (`contact_id`) REFERENCES `contacts` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_kt_band` FOREIGN KEY (`band_id`) REFERENCES `bands` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_kt_key` FOREIGN KEY (`key_id`) REFERENCES `keys` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_kt_user` FOREIGN KEY (`performed_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: keys
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 9
+Created   : 2026-02-28 12:21:59
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   key_code                    varchar(50)                 NO      UNI     NULL                
+3   description                 varchar(255)                YES             NULL                
+4   key_type                    enum('LOCKER','MASTER','EXTERNAL')NO      MUL     LOCKER              
+5   locker_id                   int                         YES     MUL     NULL                
+6   key_slot                    tinyint                     YES             NULL                
+7   notes                       text                        YES             NULL                
+8   active                      tinyint(1)                  NO              1                   
+9   lost_at                     datetime                    YES     MUL     NULL                
+10  lost_note                   varchar(255)                YES             NULL                
+11  deleted_at                  datetime                    YES     MUL     NULL                
+
+INDEXEN
+- idx_keys_deleted_at [NON_UNIQUE] : deleted_at
+- idx_keys_key_type [NON_UNIQUE] : key_type
+- idx_keys_locker [NON_UNIQUE] : locker_id
+- idx_keys_lost_at [NON_UNIQUE] : lost_at
+- key_code [UNIQUE] : key_code
+- PRIMARY [UNIQUE] : id
+- uq_keys_key_code [UNIQUE] : key_code
+- uq_locker_slot [UNIQUE] : locker_id, key_slot
+
+FOREIGN KEYS
+- fk_keys_locker : locker_id -> lockers.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+
+ENUM WAARDEN
+- key_type : LOCKER, MASTER, EXTERNAL
+
+CREATE TABLE
+CREATE TABLE `keys` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `key_code` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `key_type` enum('LOCKER','MASTER','EXTERNAL') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'LOCKER',
+  `locker_id` int DEFAULT NULL,
+  `key_slot` tinyint DEFAULT NULL,
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `active` tinyint(1) NOT NULL DEFAULT '1',
+  `lost_at` datetime DEFAULT NULL,
+  `lost_note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `key_code` (`key_code`),
+  UNIQUE KEY `uq_keys_key_code` (`key_code`),
+  UNIQUE KEY `uq_locker_slot` (`locker_id`,`key_slot`),
+  KEY `idx_keys_deleted_at` (`deleted_at`),
+  KEY `idx_keys_locker` (`locker_id`),
+  KEY `idx_keys_key_type` (`key_type`),
+  KEY `idx_keys_lost_at` (`lost_at`),
+  CONSTRAINT `fk_keys_locker` FOREIGN KEY (`locker_id`) REFERENCES `lockers` (`id`),
+  CONSTRAINT `chk_key_slot` CHECK ((`key_slot` in (1,2))),
+  CONSTRAINT `chk_keys_locker_required` CHECK ((((`key_type` = _utf8mb4'LOCKER') and (`locker_id` is not null)) or ((`key_type` in (_utf8mb4'MASTER',_utf8mb4'EXTERNAL')) and (`locker_id` is null))))
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: lockers
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_0900_ai_ci
+Rows(est) : 15
+Created   : 2026-02-28 12:06:32
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   band_id                     int                         YES     MUL     NULL                
+3   locker_no                   varchar(30)                 NO      MUL     NULL                
+4   notes                       text                        YES             NULL                
+5   created_at                  datetime                    NO              CURRENT_TIMESTAMP   DEFAULT_GENERATED
+6   deleted_at                  datetime                    YES             NULL                
+
+INDEXEN
+- idx_band [NON_UNIQUE] : band_id
+- PRIMARY [UNIQUE] : id
+- uniq_locker_no_active [UNIQUE] : locker_no, deleted_at
+- uq_band_locker [UNIQUE] : band_id, locker_no
+
+FOREIGN KEYS
+- fk_lockers_band : band_id -> bands.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `lockers` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `band_id` int DEFAULT NULL,
+  `locker_no` varchar(30) NOT NULL,
+  `notes` text,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `deleted_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_band_locker` (`band_id`,`locker_no`),
+  UNIQUE KEY `uniq_locker_no_active` (`locker_no`,`deleted_at`),
+  KEY `idx_band` (`band_id`),
+  CONSTRAINT `fk_lockers_band` FOREIGN KEY (`band_id`) REFERENCES `bands` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+
+------------------------------------------------------------
+TABEL: login_audit
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 18
+Created   : 2026-02-15 10:26:02
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   username                    varchar(50)                 YES     MUL     NULL                
+3   user_id                     int                         YES     MUL     NULL                
+4   success                     tinyint(1)                  NO              NULL                
+5   reason                      varchar(60)                 YES             NULL                
+6   ip                          varchar(45)                 YES             NULL                
+7   user_agent                  varchar(255)                YES             NULL                
+8   created_at                  datetime                    NO      MUL     CURRENT_TIMESTAMP   DEFAULT_GENERATED
+
+INDEXEN
+- idx_login_created [NON_UNIQUE] : created_at
+- idx_login_user [NON_UNIQUE] : user_id
+- idx_login_username [NON_UNIQUE] : username
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- fk_login_audit_user : user_id -> users.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `login_audit` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `username` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_id` int DEFAULT NULL,
+  `success` tinyint(1) NOT NULL,
+  `reason` varchar(60) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ip` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_agent` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_login_user` (`user_id`),
+  KEY `idx_login_username` (`username`),
+  KEY `idx_login_created` (`created_at`),
+  CONSTRAINT `fk_login_audit_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: role_section_access
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 26
+Created   : 2026-08-24 15:14:53
+Updated   : 2026-08-24 15:14:53
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   role                        varchar(20)                 NO      PRI     NULL                
+2   section                     enum('bands','planning','sleutels','financien','contacten','admin')NO      PRI     NULL                
+3   level                       enum('read','write')        NO              NULL                
+4   own_only                    tinyint(1)                  NO              0                   
+
+INDEXEN
+- PRIMARY [UNIQUE] : role, section
+
+FOREIGN KEYS
+- geen
+
+ENUM WAARDEN
+- section : bands, planning, sleutels, financien, contacten, admin
+- level : read, write
+
+CREATE TABLE
+CREATE TABLE `role_section_access` (
+  `role` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `section` enum('bands','planning','sleutels','financien','contacten','admin') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `level` enum('read','write') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `own_only` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`role`,`section`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: schedule
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 51
+Created   : 2026-04-24 18:15:55
+Updated   : 2026-08-26 04:43:20
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   band_id                     int                         NO      MUL     NULL                
+3   parent_id                   int                         YES     MUL     NULL                
+4   date                        date                        NO      MUL     NULL                
+5   timeslot                    enum('OCHTEND','MIDDAG','AVOND')NO              NULL                
+6   start_time                  time                        YES             NULL                
+7   end_time                    time                        YES             NULL                
+8   is_incidental               tinyint(1)                  NO              0                   
+9   incidental_fee              decimal(10,2)               NO              0.00                
+10  repeat_type                 enum('NONE','WEEKLY','MONTHLY')YES             NONE                
+11  repeat_until                date                        YES             NULL                
+
+INDEXEN
+- fk_schedule_band [NON_UNIQUE] : band_id
+- idx_parent_id [NON_UNIQUE] : parent_id
+- PRIMARY [UNIQUE] : id
+- uniq_date_timeslot [UNIQUE] : date, timeslot
+
+FOREIGN KEYS
+- fk_schedule_band : band_id -> bands.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+- fk_schedule_parent : parent_id -> schedule.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- timeslot : OCHTEND, MIDDAG, AVOND
+- repeat_type : NONE, WEEKLY, MONTHLY
+
+CREATE TABLE
+CREATE TABLE `schedule` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `band_id` int NOT NULL,
+  `parent_id` int DEFAULT NULL,
+  `date` date NOT NULL,
+  `timeslot` enum('OCHTEND','MIDDAG','AVOND') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `start_time` time DEFAULT NULL,
+  `end_time` time DEFAULT NULL,
+  `is_incidental` tinyint(1) NOT NULL DEFAULT '0',
+  `incidental_fee` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `repeat_type` enum('NONE','WEEKLY','MONTHLY') COLLATE utf8mb4_unicode_ci DEFAULT 'NONE',
+  `repeat_until` date DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_date_timeslot` (`date`,`timeslot`),
+  KEY `fk_schedule_band` (`band_id`),
+  KEY `idx_parent_id` (`parent_id`),
+  CONSTRAINT `fk_schedule_band` FOREIGN KEY (`band_id`) REFERENCES `bands` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_schedule_parent` FOREIGN KEY (`parent_id`) REFERENCES `schedule` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=72 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: transactions
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 0
+Created   : 2026-02-24 20:52:17
+Updated   : 
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   band_id                     int                         YES     MUL     NULL                
+3   account_id                  int                         YES     MUL     NULL                
+4   contact_id                  int                         YES     MUL     NULL                
+5   budget_item_id              int                         YES     MUL     NULL                
+6   amount                      decimal(10,2)               NO              NULL                
+7   type                        enum('income','expense')    NO              NULL                
+8   category                    varchar(100)                YES             NULL                
+9   description                 text                        YES             NULL                
+10  reference                   varchar(80)                 YES             NULL                
+11  transaction_date            date                        NO      MUL     NULL                
+12  created_by                  int                         YES     MUL     NULL                
+13  created_at                  datetime                    YES             CURRENT_TIMESTAMP   DEFAULT_GENERATED
+14  deleted_at                  datetime                    YES     MUL     NULL                
+15  deleted_by_user_id          int                         YES     MUL     NULL                
+
+INDEXEN
+- fk_trx_deleted_by [NON_UNIQUE] : deleted_by_user_id
+- idx_account_id [NON_UNIQUE] : account_id
+- idx_budget_item_id [NON_UNIQUE] : budget_item_id
+- idx_contact_id [NON_UNIQUE] : contact_id
+- idx_created_by [NON_UNIQUE] : created_by
+- idx_deleted_at [NON_UNIQUE] : deleted_at
+- idx_tx_band [NON_UNIQUE] : band_id
+- idx_tx_date [NON_UNIQUE] : transaction_date
+- PRIMARY [UNIQUE] : id
+
+FOREIGN KEYS
+- fk_trx_account : account_id -> finance_accounts.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+- fk_trx_budget_item : budget_item_id -> budget_items.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+- fk_trx_contact : contact_id -> contacts.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+- fk_trx_created_by : created_by -> users.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+- fk_trx_deleted_by : deleted_by_user_id -> users.id (ON UPDATE NO ACTION, ON DELETE NO ACTION)
+- fk_tx_band : band_id -> bands.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- type : income, expense
+
+CREATE TABLE
+CREATE TABLE `transactions` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `band_id` int DEFAULT NULL,
+  `account_id` int DEFAULT NULL,
+  `contact_id` int DEFAULT NULL,
+  `budget_item_id` int DEFAULT NULL,
+  `amount` decimal(10,2) NOT NULL,
+  `type` enum('income','expense') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `category` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `description` text COLLATE utf8mb4_unicode_ci,
+  `reference` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `transaction_date` date NOT NULL,
+  `created_by` int DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by_user_id` int DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_tx_date` (`transaction_date`),
+  KEY `idx_tx_band` (`band_id`),
+  KEY `idx_account_id` (`account_id`),
+  KEY `idx_contact_id` (`contact_id`),
+  KEY `idx_budget_item_id` (`budget_item_id`),
+  KEY `idx_deleted_at` (`deleted_at`),
+  KEY `idx_created_by` (`created_by`),
+  KEY `fk_trx_deleted_by` (`deleted_by_user_id`),
+  CONSTRAINT `fk_trx_account` FOREIGN KEY (`account_id`) REFERENCES `finance_accounts` (`id`),
+  CONSTRAINT `fk_trx_budget_item` FOREIGN KEY (`budget_item_id`) REFERENCES `budget_items` (`id`),
+  CONSTRAINT `fk_trx_contact` FOREIGN KEY (`contact_id`) REFERENCES `contacts` (`id`),
+  CONSTRAINT `fk_trx_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_trx_deleted_by` FOREIGN KEY (`deleted_by_user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_tx_band` FOREIGN KEY (`band_id`) REFERENCES `bands` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: user_roles
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 13
+Created   : 2026-04-10 11:56:26
+Updated   : 2026-08-24 16:16:17
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   user_id                     int                         NO      PRI     NULL                
+2   role                        varchar(50)                 NO      PRI     NULL                
+
+INDEXEN
+- idx_user_roles_user [NON_UNIQUE] : user_id, role
+- PRIMARY [UNIQUE] : user_id, role
+
+FOREIGN KEYS
+- fk_user_roles_user : user_id -> users.id (ON UPDATE NO ACTION, ON DELETE CASCADE)
+
+ENUM WAARDEN
+- geen
+
+CREATE TABLE
+CREATE TABLE `user_roles` (
+  `user_id` int NOT NULL,
+  `role` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`user_id`,`role`),
+  KEY `idx_user_roles_user` (`user_id`,`role`),
+  CONSTRAINT `fk_user_roles_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+------------------------------------------------------------
+TABEL: users
+------------------------------------------------------------
+Type      : BASE TABLE
+Engine    : InnoDB
+Collation : utf8mb4_unicode_ci
+Rows(est) : 7
+Created   : 2026-08-23 21:13:33
+Updated   : 2026-08-26 04:41:03
+
+KOLOMMEN
+#   Kolom                       Type                        Null    Key     Default             Extra
+1   id                          int                         NO      PRI     NULL                auto_increment
+2   username                    varchar(50)                 NO      UNI     NULL                
+3   email                       varchar(255)                YES     UNI     NULL                
+4   password_hash               varchar(255)                NO              NULL                
+5   role                        enum('ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID')NO              NULL                
+6   contact_id                  int                         YES     UNI     NULL                
+7   is_bestuurslid              tinyint(1)                  NO              0                   
+8   theme_variant               char(1)                     NO              a                   
+9   status                      enum('PENDING','ACTIVE','BLOCKED')NO              PENDING             
+10  active                      tinyint                     YES             1                   
+11  created_at                  timestamp                   YES             CURRENT_TIMESTAMP   DEFAULT_GENERATED
+12  updated_at                  datetime                    YES             NULL                
+13  approved_at                 datetime                    YES             NULL                
+14  last_login_at               datetime                    YES     MUL     NULL                
+15  reset_token_hash            varchar(255)                YES             NULL                
+16  reset_expires_at            datetime                    YES     MUL     NULL                
+17  reset_requested_at          datetime                    YES             NULL                
+18  failed_attempts             int                         NO              0                   
+19  locked_until                datetime                    YES     MUL     NULL                
+20  deleted_at                  datetime                    YES     MUL     NULL                
+21  deleted_by                  int                         YES     MUL     NULL                
+22  deleted_reason              varchar(255)                YES             NULL                
+23  email_verified_at           datetime                    YES             NULL                
+24  verify_token_hash           varchar(255)                YES             NULL                
+25  verify_expires_at           datetime                    YES             NULL                
+26  totp_secret                 varchar(64)                 YES             NULL                
+27  totp_enabled                tinyint(1)                  NO              0                   
+28  totp_verified_at            datetime                    YES             NULL                
+29  title                       varchar(20)                 YES             NULL                
+30  first_name                  varchar(100)                YES             NULL                
+31  tussenvoegsel               varchar(20)                 YES             NULL                
+32  last_name                   varchar(100)                YES             NULL                
+33  phone                       varchar(20)                 YES             NULL                
+34  verification_token          varchar(64)                 YES             NULL                
+35  verification_expires        datetime                    YES             NULL                
+
+INDEXEN
+- email [UNIQUE] : email
+- idx_users_deleted_at [NON_UNIQUE] : deleted_at
+- idx_users_deleted_by [NON_UNIQUE] : deleted_by
+- idx_users_last_login [NON_UNIQUE] : last_login_at
+- idx_users_locked_until [NON_UNIQUE] : locked_until
+- idx_users_reset_expires [NON_UNIQUE] : reset_expires_at
+- idx_users_username [NON_UNIQUE] : username
+- PRIMARY [UNIQUE] : id
+- uq_users_contact_id [UNIQUE] : contact_id
+- username [UNIQUE] : username
+
+FOREIGN KEYS
+- fk_users_contact : contact_id -> contacts.id (ON UPDATE NO ACTION, ON DELETE SET NULL)
+
+ENUM WAARDEN
+- role : ADMIN, BEHEER, FINANCIEEL, GEBRUIKER, BESTUURSLID
+- status : PENDING, ACTIVE, BLOCKED
+
+CREATE TABLE
+CREATE TABLE `users` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `username` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `email` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `role` enum('ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `contact_id` int DEFAULT NULL,
+  `is_bestuurslid` tinyint(1) NOT NULL DEFAULT '0',
+  `theme_variant` char(1) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'a',
+  `status` enum('PENDING','ACTIVE','BLOCKED') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PENDING',
+  `active` tinyint DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT NULL,
+  `approved_at` datetime DEFAULT NULL,
+  `last_login_at` datetime DEFAULT NULL,
+  `reset_token_hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `reset_expires_at` datetime DEFAULT NULL,
+  `reset_requested_at` datetime DEFAULT NULL,
+  `failed_attempts` int NOT NULL DEFAULT '0',
+  `locked_until` datetime DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` int DEFAULT NULL,
+  `deleted_reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `email_verified_at` datetime DEFAULT NULL,
+  `verify_token_hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `verify_expires_at` datetime DEFAULT NULL,
+  `totp_secret` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `totp_enabled` tinyint(1) NOT NULL DEFAULT '0',
+  `totp_verified_at` datetime DEFAULT NULL,
+  `title` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Aanspreektitel (Dhr., Mevr., etc.)',
+  `first_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `tussenvoegsel` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `last_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `verification_token` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `verification_expires` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `username` (`username`),
+  UNIQUE KEY `email` (`email`),
+  UNIQUE KEY `uq_users_contact_id` (`contact_id`),
+  KEY `idx_users_deleted_at` (`deleted_at`),
+  KEY `idx_users_deleted_by` (`deleted_by`),
+  KEY `idx_users_reset_expires` (`reset_expires_at`),
+  KEY `idx_users_last_login` (`last_login_at`),
+  KEY `idx_users_locked_until` (`locked_until`),
+  KEY `idx_users_username` (`username`),
+  CONSTRAINT `fk_users_contact` FOREIGN KEY (`contact_id`) REFERENCES `contacts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+============================================================
+3. VIEWS
+============================================================
+- geen views gevonden
+
+============================================================
+4. TRIGGERS
+============================================================
+------------------------------------------------------------
+TRIGGER: after_contract_update
+------------------------------------------------------------
+Tabel   : band_contracts
+Timing  : AFTER
+Event   : UPDATE
+Actie   : 
+BEGIN
+    -- Voeg een audit log toe om aan te geven dat de begroting opnieuw berekend moet worden
+    INSERT INTO audit_log (event_type, event_name, details, created_at)
+    VALUES ('BUDGET_UPDATE_REQUIRED', 'Contract end date changed', JSON_OBJECT('contract_id', NEW.id), NOW());
+END
+
+============================================================
+5. ROUTINES (PROCEDURES / FUNCTIONS)
+============================================================
+- geen stored procedures of functions gevonden
+
+============================================================
+6. MOGELIJK ONTBREKENDE FOREIGN KEYS
+============================================================
+- audit_log.user_id : kolom eindigt op _id maar heeft geen foreign key | mogelijke verwijzing naar tabel(len): users
+- key_contracts.band_contact_id : kolom eindigt op _id maar heeft geen foreign key | mogelijke verwijzing naar tabel(len): band_contacts
+
+============================================================
+7. ONTWERPNOTITIES / SUGGESTIES
+============================================================
+- Controleer of alle *_id-kolommen die logisch naar een andere tabel wijzen ook echt een foreign key hebben.
+- Controleer of audit-tabellen voldoende context opslaan: actor, action, target_type, target_id, metadata, ip, user_agent, created_at.
+- Controleer of tabellen met statusvelden een consistente set enum-waarden of referentietabel gebruiken.
+- Controleer of unieke velden zoals email, username, sleutelnummer of bandnaam ook echt unieke indexen hebben waar nodig.
+- Controleer of soft delete-tabellen filters nodig hebben op deleted_at IS NULL in alle beheerpagina's.
+- Controleer of belangrijke zoekvelden indexen hebben, zoals bandnaam, datumvelden, foreign keys en loginvelden.

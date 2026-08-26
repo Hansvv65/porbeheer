@@ -7,7 +7,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('sleutels', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -187,7 +187,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
       <div class="kpi">
         <div class="pill">Kasten: <strong style="color:#fff"><?= (int)$lockerCount ?></strong> (vrij: <strong style="color:#fff"><?= (int)$freeLockers ?></strong>)</div>
         <div class="pill">Sleutels: <strong style="color:#fff"><?= (int)$keyCount ?></strong> (master: <strong style="color:#fff"><?= (int)$masterCount ?></strong>, extern: <strong style="color:#fff"><?= (int)$externalCount ?></strong>)</div>
-        <a class="pill" href="/admin/keys_edit.php">Nieuwe sleutel</a>
+        <?php if (hasSectionAccess($pdo, 'sleutels', 'write')): ?><a class="pill" href="/admin/keys_edit.php">Nieuwe sleutel</a><?php endif; ?>
       </div>
     </div>
 
@@ -376,7 +376,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
                   <?php endif; ?>
                 </td>
                 <td>
-                  <a class="btn btn-sm" href="/admin/keys_edit.php?id=<?= $keyId ?>">Bewerken</a>
+                  <?php if (hasSectionAccess($pdo, 'sleutels', 'write')): ?><a class="btn btn-sm" href="/admin/keys_edit.php?id=<?= $keyId ?>">Bewerken</a><?php endif; ?>
                       <?php if ($isIssued): ?>
                           <a class="btn btn-sm btn-contract" href="/admin/contract_edit.php?id=<?= $keyId ?>" title="Contract bekijken">📄 Contract</a>
                       <?php endif; ?>

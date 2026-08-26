@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID']);
+requireLogin();
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -14,27 +14,35 @@ $bg = themeImage('dashboard', $pdo);
 // Haal alle rollen van de gebruiker op uit user_roles tabel
 $userRoles = getUserRoles($pdo);
 
+// Weergavenaam voor "hoogste rol" -- bewust berekend uit dezelfde lijst als
+// de badges hieronder (niet uit het losse users.role-veld), zodat tekst en
+// badges nooit meer tegenstrijdig kunnen zijn.
+$rolePriorityDisplay = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'BESTUURSLID'=>4,'ADMIN'=>5,'BANDLID'=>0];
+$topRole = 'GEBRUIKER';
+$topPriority = 0;
+foreach ($userRoles as $ur) {
+    $p = $rolePriorityDisplay[$ur] ?? 0;
+    if ($p > $topPriority) { $topPriority = $p; $topRole = $ur; }
+}
+
 $tiles = [
-    ['title'=>'Bands',               'href'=>'/admin/bands.php',      'roles'=>['ADMIN','BEHEER']],
-    ['title'=>'Planning',            'href'=>'/admin/planning.php',   'roles'=>['ADMIN','BEHEER']],
-    ['title'=>'Sleutels en Kasten',  'href'=>'/admin/keys.php',       'roles'=>['ADMIN','BEHEER']],
-    ['title'=>'Financiën',           'href'=>'/admin/finance.php',    'roles'=>['ADMIN','FINANCIEEL']],
-    ['title'=>'Contacten',           'href'=>'/admin/contacts.php',   'roles'=>['ADMIN','BEHEER','FINANCIEEL']],
-    /*['title'=>'Bestuurszaken',     'href'=>'/admin/board.php',      'roles'=>['ADMIN','BESTUURSLID']],*/
-    ['title'=>'Admin',               'href'=>'/admin/beheer.php',     'roles'=>['ADMIN']],
-    ['title'=>'Help',                'href'=>'/assets/Handleiding_B.pdf', 'target'=>'_blank', 'roles'=>['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID']],
-    /*['title'=>'Help',              'href'=>'/admin/help.php',       'roles'=>['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID']],*/
-    ['title'=>'Uitloggen',           'href'=>'/logout.php',           'roles'=>['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID']],
+    ['title'=>'Bands',               'href'=>'/admin/bands.php',      'section'=>'bands'],
+    ['title'=>'Planning',            'href'=>'/admin/planning.php',   'section'=>'planning'],
+    ['title'=>'Sleutels en Kasten',  'href'=>'/admin/keys.php',       'section'=>'sleutels'],
+    ['title'=>'Financiën',           'href'=>'/admin/finance.php',    'section'=>'financien'],
+    ['title'=>'Contacten',           'href'=>'/admin/contacts.php',   'section'=>'contacten'],
+    ['title'=>'Admin',               'href'=>'/admin/beheer.php',     'section'=>'admin'],
+    ['title'=>'Help',                'href'=>'/assets/Handleiding_B.pdf', 'target'=>'_blank', 'section'=>null],
+    ['title'=>'Uitloggen',           'href'=>'/logout.php',           'section'=>null],
 ];
 
-// Aangepaste functie die checkt of gebruiker één van de benodigde rollen heeft
-function allowedTile(array $tile, array $userRoles): bool {
-    foreach ($tile['roles'] as $requiredRole) {
-        if (in_array($requiredRole, $userRoles, true)) {
-            return true;
-        }
+// Een tegel zonder onderdeel (Help/Uitloggen) staat voor iedere ingelogde
+// gebruiker open. Anders: minimaal leesrecht op dat onderdeel nodig.
+function allowedTile(PDO $pdo, array $tile): bool {
+    if ($tile['section'] === null) {
+        return true;
     }
-    return false;
+    return hasSectionAccess($pdo, $tile['section'], 'read');
 }
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
@@ -168,12 +176,12 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
             <div class="userbox">
                 <div class="line1">
                     Hallo <a href="/admin/account.php"><?= h($user['username'] ?? '') ?></a> ·
-                    Primaire rol: <?= h($role) ?>
+                    Hoogste rol: <?= h($topRole) ?>
                 </div>
 
                 <div class="roles-badge">
                     <?php foreach ($userRoles as $userRole): ?>
-                        <span class="badge <?= $userRole === $role ? 'primary' : '' ?>">
+                        <span class="badge <?= $userRole === $topRole ? 'primary' : '' ?>">
                             <?= h($userRole) ?>
                         </span>
                     <?php endforeach; ?>
@@ -195,12 +203,13 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
             <div class="grid">
                 <?php foreach ($tiles as $tile): ?>
                     <?php
-                    $allowed = allowedTile($tile, $userRoles);
+                    $allowed = allowedTile($pdo, $tile);
                     $cls = $allowed ? 'tile' : 'tile disabled';
+                    $tip = $allowed ? '' : ' title="Je hebt hier geen toegang toe"';
                     $href = $allowed ? $tile['href'] : '#';
                     $target = ($allowed && !empty($tile['target'])) ? ' target="' . h($tile['target']) . '"' : '';
                     ?>
-                    <a class="<?= $cls ?>" href="<?= h($href) ?>" <?= $target ?>>
+                    <a class="<?= $cls ?>" href="<?= h($href) ?>" <?= $target ?><?= $tip ?>>
                         <?= h($tile['title']) ?>
                     </a>
                 <?php endforeach; ?>

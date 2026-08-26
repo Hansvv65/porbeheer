@@ -292,6 +292,14 @@ $options = [
 try {
     $pdo = new PDO($dsn, $DB_USER, $DB_PASS, $options);
     $GLOBALS['pdo'] = $pdo;
+
+    // MySQL's NOW()/CURRENT_TIMESTAMP gebruiken standaard de tijdzone van de
+    // MySQL-server zelf (vaak UTC), los van de Europe/Amsterdam-instelling
+    // hierboven voor PHP. Daardoor liepen tijden in de database (bijv. de
+    // audit-log) tot 2 uur achter. Dit zet de sessie-tijdzone gelijk aan wat
+    // PHP nu net heeft ingesteld, inclusief zomer-/wintertijd.
+    $tzOffset = (new DateTime('now'))->format('P');
+    $pdo->exec("SET time_zone = " . $pdo->quote($tzOffset));
 } catch (Throwable $e) {
     http_response_code(500);
     echo 'Database connectie mislukt.';

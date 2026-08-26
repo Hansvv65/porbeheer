@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER','FINANCIEEL']);
+requireSectionAccess('financien', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -32,6 +32,7 @@ $err = null; $msg = null;
 $created = 0; $skipped = 0;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireSectionAccess('financien', 'write');
   requireCsrf($_POST['csrf'] ?? '');
 
   $pdo->beginTransaction();

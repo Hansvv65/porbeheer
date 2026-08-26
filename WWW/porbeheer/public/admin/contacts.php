@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER','FINANCIEEL']);
+requireSectionAccess('contacten', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -104,6 +104,9 @@ th{background:rgba(255,255,255,.05)}
 <?php endif; ?>
 <?php if (isset($_GET['updated'])): ?>
   <div class="msg ok">Contact bijgewerkt.</div>
+<?php endif; ?>
+<?php if (isset($_GET['bandcreated'])): ?>
+  <div class="msg ok">Band "<?= h((string)($_GET['bandname'] ?? '')) ?>" aangemaakt.</div>
 <?php endif; ?>
 <?php if (isset($_GET['notfound'])): ?>
   <div class="msg err">Contact niet gevonden.</div>

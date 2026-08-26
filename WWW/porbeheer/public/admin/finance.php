@@ -10,7 +10,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER','FINANCIEEL']);
+requireSectionAccess('financien', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -119,15 +119,15 @@ $recent = $st->fetchAll();
 
 /* Finance tiles */
 $tiles = [
-  ['title'=>'Transacties',      'href'=>'/admin/transactions.php?account_id='.$accountId, 'roles'=>['ADMIN','BEHEER','FINANCIEEL']],
-  ['title'=>'+ Invoer',         'href'=>'/admin/transaction_new.php?account_id='.$accountId, 'roles'=>['ADMIN','BEHEER','FINANCIEEL']],
-  ['title'=>'Begroting',        'href'=>'/admin/budget.php', 'roles'=>['ADMIN','BEHEER','FINANCIEEL']],
-  ['title'=>'Facturen',         'href'=>'/admin/invoices.php', 'roles'=>['ADMIN','BEHEER','FINANCIEEL']],
-  ['title'=>'Genereer facturen','href'=>'/admin/invoice_run.php', 'roles'=>['ADMIN','BEHEER','FINANCIEEL']],
+  ['title'=>'Transacties',      'href'=>'/admin/transactions.php?account_id='.$accountId, 'section'=>'financien'],
+  ['title'=>'+ Invoer',         'href'=>'/admin/transaction_new.php?account_id='.$accountId, 'section'=>'financien'],
+  ['title'=>'Begroting',        'href'=>'/admin/budget.php', 'section'=>'financien'],
+  ['title'=>'Facturen',         'href'=>'/admin/invoices.php', 'section'=>'financien'],
+  ['title'=>'Genereer facturen','href'=>'/admin/invoice_run.php', 'section'=>'financien'],
 ];
 
-function allowedTile(array $tile, string $role): bool {
-  return in_array($role, $tile['roles'], true);
+function allowedTile(PDO $pdo, array $tile): bool {
+  return hasSectionAccess($pdo, $tile['section'], 'read');
 }
 
 ?>
@@ -324,11 +324,12 @@ option{ color:#000; }
         <div class="grid" style="margin-top:14px;">
           <?php foreach ($tiles as $t): ?>
             <?php
-              $ok = allowedTile($t, $role);
+              $ok = allowedTile($pdo, $t);
               $cls = $ok ? 'tile' : 'tile disabled';
+              $tip = $ok ? '' : ' title="Je hebt hier geen toegang toe"';
               $href = $ok ? $t['href'] : '#';
             ?>
-            <a class="<?= $cls ?>" href="<?= h($href) ?>"><?= h($t['title']) ?></a>
+            <a class="<?= $cls ?>" href="<?= h($href) ?>"<?= $tip ?>><?= h($t['title']) ?></a>
           <?php endforeach; ?>
         </div>
 

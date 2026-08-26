@@ -18,7 +18,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('bands', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -141,6 +141,7 @@ $history = $hist->fetchAll(PDO::FETCH_ASSOC);
 $msg = null; $err = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireSectionAccess('bands', 'write');
     requireCsrf($_POST['csrf'] ?? null);
     $mode = (string)($_POST['mode'] ?? 'tx');
 

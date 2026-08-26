@@ -17,7 +17,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/mail.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('planning', 'write');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';

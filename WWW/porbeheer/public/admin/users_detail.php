@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/mail.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN']);
+requireSectionAccess('admin', 'write');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -75,8 +75,8 @@ function computePrimaryRole(array $roles, array $priority): string {
 }
 // =====================================================
 
-$allowedRoles = ['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID'];
-$rolePriority = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'BESTUURSLID'=>4,'ADMIN'=>5];
+$allowedRoles = ['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID','BANDLID'];
+$rolePriority = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'BESTUURSLID'=>4,'ADMIN'=>5,'BANDLID'=>0];
 
 $errors = [];
 $success = null;
@@ -253,20 +253,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // 7. Primaire rol wijzigen (alleen als de gekozen rol in de rollenlijst zit)
-    if ($action === 'set_primary_role') {
+    // 6b. Bestuurslid-vlag en contactkoppeling (los van rollen)
+    if ($action === 'set_extra') {
         if ($isDeleted) $errors[] = 'User is verwijderd. Herstel eerst.';
         else {
-            $newPrimary = (string)($_POST['primary_role'] ?? '');
-            if (!in_array($newPrimary, $allowedRoles, true)) {
-                $errors[] = 'Ongeldige primaire rol.';
-            } elseif (!in_array($newPrimary, $rolesNow, true)) {
-                $errors[] = 'Gebruiker heeft deze rol niet. Voeg de rol eerst toe.';
-            } else {
-                $pdo->prepare("UPDATE users SET role = ? WHERE id = ?")->execute([$newPrimary, $id]);
+            $isBestuurslid = isset($_POST['is_bestuurslid']) ? 1 : 0;
+            $contactIdRaw = trim((string)($_POST['contact_id'] ?? ''));
+            $newContactId = $contactIdRaw === '' ? null : (int)$contactIdRaw;
+
+            if ($newContactId !== null) {
+                $chk = $pdo->prepare("SELECT id FROM contacts WHERE id = ? AND deleted_at IS NULL");
+                $chk->execute([$newContactId]);
+                if (!$chk->fetchColumn()) {
+                    $errors[] = 'Onbekend of verwijderd contact.';
+                }
+                $dup = $pdo->prepare("SELECT username FROM users WHERE contact_id = ? AND id != ?");
+                $dup->execute([$newContactId, $id]);
+                if ($existingUsername = $dup->fetchColumn()) {
+                    $errors[] = 'Dit contact is al gekoppeld aan account "' . $existingUsername . '".';
+                }
+            }
+
+            if (!$errors) {
+                $pdo->prepare("UPDATE users SET is_bestuurslid = ?, contact_id = ? WHERE id = ?")
+                    ->execute([$isBestuurslid, $newContactId, $id]);
                 if ($id === $currentUserId && function_exists('refreshSessionUser')) refreshSessionUser($pdo, $id);
-                $success = 'Primaire rol gewijzigd naar ' . h($newPrimary);
-                auditLog($pdo, 'USER_PRIMARY_ROLE_CHANGE', 'admin/users_detail.php', ['id'=>$id, 'new_role'=>$newPrimary]);
+                $success = 'Bestuurslid-status en contactkoppeling opgeslagen.';
+                auditLog($pdo, 'USER_EXTRA_SET', 'admin/users_detail.php', [
+                    'id' => $id, 'is_bestuurslid' => $isBestuurslid, 'contact_id' => $newContactId,
+                ]);
             }
         }
     }
@@ -378,6 +393,20 @@ $isTargetAdmin = in_array('ADMIN', $rolesNow, true) || ((string)$target['role'] 
 $emailVerified = !empty($target['email_verified_at']);
 $verificationExpires = $target['verification_expires'] ?? null;
 $verificationValid = $verificationExpires && strtotime($verificationExpires) > time();
+
+// Contacten voor de koppel-dropdown: alle niet-verwijderde contacten, met
+// vermelding van een eventueel al gekoppeld account (zodat dat zichtbaar is
+// i.p.v. verrassend -- zie ook de duplicate-check bij het opslaan).
+$availableContacts = $pdo->prepare("
+    SELECT c.id, c.name, c.first_name, c.last_name, c.email,
+           u2.username AS linked_username
+    FROM contacts c
+    LEFT JOIN users u2 ON u2.contact_id = c.id AND u2.id != ?
+    WHERE c.deleted_at IS NULL
+    ORDER BY c.name, c.last_name, c.first_name
+");
+$availableContacts->execute([$id]);
+$availableContacts = $availableContacts->fetchAll(PDO::FETCH_ASSOC);
 
 $statusLabel = $status;
 $statusClass = 'badge';
@@ -669,9 +698,9 @@ a:hover{ opacity:.95; }
           </form>
         </div>
 
-        <!-- Blok 3: Rollen & Primaire rol -->
+        <!-- Blok 3: Rollen (plat, meerdere tegelijk mogelijk) -->
         <div class="box">
-          <div class="label">Rollen & Primaire rol</div>
+          <div class="label">Rollen</div>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
             <input type="hidden" name="id" value="<?= (int)$target['id'] ?>">
@@ -693,23 +722,44 @@ a:hover{ opacity:.95; }
             <div class="row" style="margin-top:12px;">
               <button class="btn small" type="submit" name="action" value="set_roles" <?= $isDeleted ? 'disabled' : '' ?>>Rollen opslaan</button>
             </div>
-            <div class="hr"></div>
-            <div class="label">Primaire rol (sessie & weergave)</div>
-            <select name="primary_role" class="inp" style="margin-top:8px;" <?= $isDeleted ? 'disabled' : '' ?>>
-              <?php foreach ($allowedRoles as $role): ?>
-                <?php if (in_array($role, $rolesNow, true) || $role === 'GEBRUIKER'): ?>
-                  <option value="<?= h($role) ?>" <?= $role === (string)$target['role'] ? 'selected' : '' ?>>
-                    <?= h($role) ?>
-                  </option>
-                <?php endif; ?>
+            <div class="small" style="margin-top:8px;">
+              Elke rol geeft rechten op onderdelen (zie de <a href="/admin/rechtenmatrix.php">rechtenmatrix</a>) -- een gebruiker mag er meerdere hebben.<br>
+              Beveiliging: ADMIN rol kan niet worden verwijderd van een ADMIN‑account. Laatste ADMIN kan niet gedowngraded worden.
+            </div>
+          </form>
+        </div>
+
+        <!-- Blok 3b: Bestuurslid & contactkoppeling -->
+        <div class="box">
+          <div class="label">Bestuurslid & contactkoppeling</div>
+          <form method="post">
+            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+            <input type="hidden" name="id" value="<?= (int)$target['id'] ?>">
+            <label class="roleitem" style="display:block;margin-bottom:10px;">
+              <input type="checkbox" name="is_bestuurslid" value="1"
+                <?= !empty($target['is_bestuurslid']) ? 'checked' : '' ?>
+                <?= $isDeleted ? 'disabled' : '' ?>>
+              Bestuurslid (bepaalt alleen de mailinglijst, geen paginarechten)
+            </label>
+            <label class="small" style="display:block;margin-bottom:4px;">Gekoppeld contact (voor een toekomstig bandlid-account)</label>
+            <select name="contact_id" class="inp" <?= $isDeleted ? 'disabled' : '' ?>>
+              <option value="">-- geen koppeling --</option>
+              <?php foreach ($availableContacts as $c): ?>
+                <?php
+                  $label = trim((string)$c['name']) !== '' ? (string)$c['name']
+                    : trim(((string)$c['first_name']) . ' ' . ((string)$c['last_name']));
+                  if ((string)($c['email'] ?? '') !== '') $label .= ' (' . $c['email'] . ')';
+                  if (!empty($c['linked_username'])) $label .= ' -- al gekoppeld aan ' . $c['linked_username'];
+                  $isSelected = ((int)($target['contact_id'] ?? 0) === (int)$c['id']);
+                  $isTakenByOther = !empty($c['linked_username']) && !$isSelected;
+                ?>
+                <option value="<?= (int)$c['id'] ?>" <?= $isSelected ? 'selected' : '' ?> <?= $isTakenByOther ? 'disabled' : '' ?>>
+                  <?= h($label) ?>
+                </option>
               <?php endforeach; ?>
             </select>
             <div class="row" style="margin-top:12px;">
-              <button class="btn ok small" type="submit" name="action" value="set_primary_role" <?= $isDeleted ? 'disabled' : '' ?>>Primaire rol wijzigen</button>
-            </div>
-            <div class="small" style="margin-top:8px;">
-              💡 Huidige primaire rol: <span class="badge <?= (string)$target['role'] === 'ADMIN' ? 'ok' : '' ?>"><?= h((string)$target['role']) ?></span><br>
-              Beveiliging: ADMIN rol kan niet worden verwijderd van een ADMIN‑account. Laatste ADMIN kan niet gedowngraded worden.
+              <button class="btn small" type="submit" name="action" value="set_extra" <?= $isDeleted ? 'disabled' : '' ?>>Opslaan</button>
             </div>
           </form>
         </div>

@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('sleutels', 'write');
 
 // ---------- AJAX ENDPOINTS (blijven gelijk) ----------
 if (isset($_GET['action'])) {

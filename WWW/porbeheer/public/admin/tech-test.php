@@ -6,7 +6,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN', 'BEHEER']);
+requireSectionAccess('admin', 'read');
 
 // ===== AUDIT LOGGING FUNCTIE (indien niet al globaal aanwezig) =====
 if (!function_exists('auditLog')) {
@@ -199,6 +199,7 @@ $twofaMessageType = 'info';
 $twofaResult = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['tech_action'] ?? '') === '2fa_generate') {
+    requireSectionAccess('admin', 'write');
     requireCsrf($_POST['csrf'] ?? '');
     $tfa = buildTwoFactorAuth();
     $_SESSION['tech_test_2fa_secret'] = $tfa->createSecret();
@@ -206,11 +207,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['tech_action'] ?? '') === '
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['tech_action'] ?? '') === '2fa_reset') {
+    requireSectionAccess('admin', 'write');
     requireCsrf($_POST['csrf'] ?? '');
     unset($_SESSION['tech_test_2fa_secret']);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['tech_action'] ?? '') === '2fa_verify') {
+    requireSectionAccess('admin', 'write');
     requireCsrf($_POST['csrf'] ?? '');
     $secret = (string)($_SESSION['tech_test_2fa_secret'] ?? '');
     $code = trim((string)($_POST['code'] ?? ''));
@@ -265,6 +268,7 @@ $emailBody    = (string)($_POST['message'] ?? "Dit is een testmail vanuit de tec
 $emailShowDebug = isset($_POST['show_debug']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['tech_action'] ?? '') === 'email_send') {
+    requireSectionAccess('admin', 'write');
     requireCsrf($_POST['csrf'] ?? '');
 
     $emailTo = trim($emailTo);

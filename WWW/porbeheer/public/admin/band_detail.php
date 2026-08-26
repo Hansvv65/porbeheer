@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('bands', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -265,7 +265,7 @@ hr{border:none;border-top:1px solid rgba(255,255,255,.12);margin:10px 0}
       <h1><?= h($band['name']) ?></h1>
       <div class="sub">
         <a href="/admin/bands.php">Overzicht</a>
-        <a href="/admin/band_edit.php?id=<?= (int)$id ?>">Bewerken</a>
+        <?php if (hasSectionAccess($pdo, 'bands', 'write')): ?><a href="/admin/band_edit.php?id=<?= (int)$id ?>">Bewerken</a><?php endif; ?>
         <a href="/admin/band_keys.php?band_id=<?= (int)$id ?>">Sleutelbeheer</a>
       </div>
     </div>

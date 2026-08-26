@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN']);
+requireSectionAccess('admin', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -33,7 +33,7 @@ $users = $pdo->query("
   FROM users u
   LEFT JOIN (
     SELECT user_id,
-           GROUP_CONCAT(role ORDER BY FIELD(role,'ADMIN','BEHEER','FINANCIEEL','GEBRUIKER') SEPARATOR ',') AS roles_csv
+           GROUP_CONCAT(role ORDER BY FIELD(role,'ADMIN','BEHEER','FINANCIEEL','BESTUURSLID','BANDLID','GEBRUIKER') SEPARATOR ',') AS roles_csv
     FROM user_roles
     GROUP BY user_id
   ) r ON r.user_id = u.id

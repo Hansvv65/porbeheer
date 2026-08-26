@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('bands', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -324,7 +324,7 @@ try {
       <h1>Bands</h1>
       <div class="sub">
         <a href="/admin/band_keys.php">Sleutels en Kasten</a>
-        <?php if (in_array($role, ['ADMIN','BEHEER'], true)): ?> <a href="/admin/band_edit.php">Nieuwe Band</a>
+        <?php if (hasSectionAccess($pdo, 'bands', 'write')): ?> <a href="/admin/band_edit.php">Nieuwe Band</a>
         <?php endif; ?>
       </div>
     </div>

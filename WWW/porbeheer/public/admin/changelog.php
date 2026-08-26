@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('admin', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -98,6 +98,7 @@ $canAssignToVersionId = function (?int $versionId) use ($versionsById, $appVersi
 
 /* nieuwe toekomstige versie toevoegen */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_version'])) {
+    requireSectionAccess('admin', 'write');
     requireCsrf($_POST['csrf'] ?? '');
 
     $version = trim((string)($_POST['version'] ?? ''));
@@ -146,6 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_version'])) {
 
 /* nieuw item toevoegen */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_item'])) {
+    requireSectionAccess('admin', 'write');
     requireCsrf($_POST['csrf'] ?? '');
 
     $versionIdRaw = trim((string)($_POST['version_id'] ?? ''));
@@ -199,6 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_item'])) {
 
 /* bestaand item aanpassen */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_item'])) {
+    requireSectionAccess('admin', 'write');
     requireCsrf($_POST['csrf'] ?? '');
 
     $itemId       = (int)($_POST['item_id'] ?? 0);

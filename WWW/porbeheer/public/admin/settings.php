@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN']);
+requireSectionAccess('admin', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -54,6 +54,7 @@ $monthPrice = getSetting($pdo, 'subscription_month_price', '0.00');
 $daypartPrice = getSetting($pdo, 'daypart_price', '0.00');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireSectionAccess('admin', 'write');
     requireCsrf($_POST['csrf'] ?? '');
 
     $postedMonthPrice = (string)($_POST['subscription_month_price'] ?? '');

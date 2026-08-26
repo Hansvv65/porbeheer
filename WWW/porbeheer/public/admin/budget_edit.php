@@ -10,7 +10,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN', 'BEHEER', 'FINANCIEEL']);
+requireSectionAccess('financien', 'write');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';

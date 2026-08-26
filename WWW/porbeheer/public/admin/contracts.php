@@ -17,7 +17,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once PROJECT_ROOT . '/app/contract_lib.php';
 
-requireRole(['ADMIN', 'BEHEER', 'BESTUURSLID']);
+requireSectionAccess('sleutels', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -81,6 +81,7 @@ if (($_GET['action'] ?? '') === 'qr' && isset($_GET['contract_id'])) {
 
 // --- token (her)genereren (POST) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regen_token') {
+    requireSectionAccess('sleutels', 'write');
     header('Content-Type: application/json');
     try {
         requireCsrf($_POST['csrf'] ?? '');
@@ -106,6 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regen
 // --- beheerder uploadt getekend contract (POST, multipart) ---
 $uploadMsg = null; $uploadErr = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admin_upload') {
+    requireSectionAccess('sleutels', 'write');
     try {
         requireCsrf($_POST['csrf'] ?? '');
         $cid = (int)($_POST['contract_id'] ?? 0);

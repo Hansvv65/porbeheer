@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('contacten', 'write');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -25,7 +25,7 @@ $row = [
 ];
 
 if ($isEdit) {
-    $stmt = $pdo->prepare("SELECT id, first_name, tussenvoegsel, aanhef, last_name, email, phone, notes FROM contacts WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT id, name, first_name, tussenvoegsel, aanhef, last_name, email, phone, notes FROM contacts WHERE id = ?");
     $stmt->execute([$id]);
     $dbRow = $stmt->fetch();
     if (!$dbRow) {
@@ -39,6 +39,15 @@ auditLog($pdo, 'PAGE_VIEW', "admin/contact_edit.php id=$id");
 
 $errors  = [];
 $success = null;
+if (isset($_GET['created'])) {
+    $success = 'Contact aangemaakt. Wil je hier ook meteen een band voor aanmaken? Zie de knop hieronder.';
+}
+if (isset($_GET['bandexists'])) {
+    $errors[] = 'Dit contact heeft al een band, er is geen nieuwe aangemaakt.';
+}
+if (isset($_GET['bandnameexists'])) {
+    $errors[] = 'Er bestaat al een band met die naam, er is geen nieuwe aangemaakt.';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf($_POST['csrf'] ?? '');
@@ -47,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Hard-delete
     if ($action === 'delete') {
-        if (!in_array($role, ['ADMIN','BEHEER'], true)) {
+        if (!hasSectionAccess($pdo, 'contacten', 'write')) {
             header('Location: /admin/contact_edit.php');
             exit;
         }
@@ -82,7 +91,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // Normaal formulier
+    // Snel een band aanmaken voor dit contact (bijv. voor een individueel lid
+    // dat zelfstandig wil boeken) -- bandnaam = "<contactnaam> band", later
+    // aan te passen. Met dubbele-check: dit contact mag nog geen band hebben,
+    // en er mag nog geen band met exact deze naam bestaan.
+    if ($action === 'create_band_for_contact') {
+        if (!hasSectionAccess($pdo, 'contacten', 'write') || !hasSectionAccess($pdo, 'bands', 'write')) {
+            header('Location: /admin/contact_edit.php?id=' . $id);
+            exit;
+        }
+        $targetId = (int)($_POST['id'] ?? 0);
+        $target = $pdo->prepare("SELECT id, name FROM contacts WHERE id = ? AND deleted_at IS NULL");
+        $target->execute([$targetId]);
+        $contact = $target->fetch(PDO::FETCH_ASSOC);
+
+        if (!$contact) {
+            header('Location: /admin/contacts.php?notfound=1');
+            exit;
+        }
+
+        // Check 1: heeft dit contact al een band? (niet vertrouwen op alleen
+        // de knop-zichtbaarheid, want de pagina kan verouderd zijn geladen.)
+        $existingForContact = $pdo->prepare("
+            SELECT id, name FROM bands
+            WHERE (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL
+            LIMIT 1
+        ");
+        $existingForContact->execute([$targetId, $targetId]);
+        $already = $existingForContact->fetch(PDO::FETCH_ASSOC);
+
+        if ($already) {
+            header('Location: /admin/contact_edit.php?id=' . $targetId . '&bandexists=1');
+            exit;
+        }
+
+        $bandName = trim((string)$contact['name']) . ' band';
+
+        // Check 2: bestaat er al een band met exact deze naam?
+        $existingByName = $pdo->prepare("SELECT id FROM bands WHERE name = ? AND deleted_at IS NULL LIMIT 1");
+        $existingByName->execute([$bandName]);
+        if ($existingByName->fetch()) {
+            header('Location: /admin/contact_edit.php?id=' . $targetId . '&bandnameexists=1');
+            exit;
+        }
+
+        $ins = $pdo->prepare("INSERT INTO bands (name, primary_contact_id) VALUES (?, ?)");
+        $ins->execute([$bandName, $targetId]);
+        $newBandId = (int)$pdo->lastInsertId();
+
+        auditLog($pdo, 'BAND_CREATED_FOR_CONTACT', "Band #$newBandId ('$bandName') aangemaakt voor contact '{$contact['name']}' (ID $targetId)");
+        header('Location: /admin/contacts.php?bandcreated=1&bandname=' . urlencode($bandName));
+        exit;
+    }
+
+    if ($action !== 'create_band_for_contact') {
+
     $firstName     = trim((string)($_POST['first_name'] ?? ''));
     $tussenvoegsel = trim((string)($_POST['tussenvoegsel'] ?? ''));
     $aanhef        = trim((string)($_POST['aanhef'] ?? ''));
@@ -149,7 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ins->execute([$fullName, $firstName, $tussenvoegselDb, $aanhefDb, $lastName, $email, $phone, $notesDb]);
             $newId = (int)$pdo->lastInsertId();
             auditLog($pdo, 'CONTACT_CREATE', "Nieuw contact '$fullName' (ID $newId) aangemaakt door gebruiker '$username' (ID $userId)");
-            header('Location: /admin/contacts.php?created=1');
+            header('Location: /admin/contact_edit.php?id=' . $newId . '&created=1');
             exit;
         }
     } else {
@@ -160,6 +223,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $row['email']         = $email;
         $row['phone']         = $phone;
         $row['notes']         = $notes;
+    }
     }
 }
 ?>
@@ -221,6 +285,36 @@ select option{ background:#222; color:#fff; }
         <div class="msg err"><strong>Controleer het formulier:</strong><ul style="margin:8px 0 0 18px;"><?php foreach ($errors as $e): ?><li><?= h($e) ?></li><?php endforeach; ?></ul></div>
       <?php endif; ?>
 
+      <?php if ($isEdit): ?>
+        <?php
+          $linkedBands = $pdo->prepare("
+              SELECT id, name,
+                     (primary_contact_id = ?) AS is_primary
+              FROM bands
+              WHERE (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL
+              ORDER BY name
+          ");
+          $linkedBands->execute([$id, $id, $id]);
+          $linkedBands = $linkedBands->fetchAll(PDO::FETCH_ASSOC);
+        ?>
+        <?php if ($linkedBands): ?>
+          <div class="field" style="margin-bottom:16px;">
+            <strong>Hoort bij:</strong>
+            <?php foreach ($linkedBands as $i => $b): ?><?= $i > 0 ? ', ' : '' ?><a href="/admin/band_detail.php?id=<?= (int)$b['id'] ?>"><?= h($b['name']) ?></a><?php if ($b['is_primary']): ?> (eerste contact)<?php endif; ?><?php endforeach; ?>
+          </div>
+        <?php elseif (hasSectionAccess($pdo, 'contacten', 'write') && hasSectionAccess($pdo, 'bands', 'write')): ?>
+          <div class="field" style="margin-bottom:16px;border:2px solid rgba(255,255,255,.35);">
+            <strong style="font-size:16px;">Er is nog geen band voor deze persoon. Nu aanmaken?</strong>
+            <form method="post" action="/admin/contact_edit.php" style="margin-top:12px;">
+              <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
+              <input type="hidden" name="id" value="<?= (int)$id ?>">
+              <input type="hidden" name="action" value="create_band_for_contact">
+              <button class="btn" type="submit" style="font-size:15px;padding:12px 20px;">Ja, band aanmaken</button>
+            </form>
+          </div>
+        <?php endif; ?>
+      <?php endif; ?>
+
       <form method="post" action="/admin/contact_edit.php">
         <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
         <input type="hidden" name="id" value="<?= (int)$id ?>">
@@ -264,7 +358,7 @@ select option{ background:#222; color:#fff; }
           <button class="btn" type="submit"><?= $isEdit ? 'Opslaan' : 'Aanmaken' ?></button>
           <a class="btn secondary" href="/admin/contacts.php">Annuleren</a>
 
-          <?php if ($isEdit && in_array($role, ['ADMIN','BEHEER'], true)): ?>
+          <?php if ($isEdit && hasSectionAccess($pdo, 'contacten', 'write')): ?>
             <form method="post" action="/admin/contact_edit.php" style="display:inline;">
               <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
               <input type="hidden" name="id" value="<?= (int)$id ?>">
@@ -273,6 +367,7 @@ select option{ background:#222; color:#fff; }
             </form>
           <?php endif; ?>
         </div>
+
         <div class="smallnote">* verplicht veld. Telefoon: Nederlands 06-formaat (06-12345678) of buitenlands (+32...).</div>
       </form>
     </div>

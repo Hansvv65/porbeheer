@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/mail.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN']);
+requireSectionAccess('admin', 'write');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -15,8 +15,8 @@ $bg = themeImage('contacts', $pdo);
 $errors = [];
 $success = null;
 
-$allowedRoles = ['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID'];
-$priority = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'BESTUURSLID'=>4,'ADMIN'=>5];
+$allowedRoles = ['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID','BANDLID'];
+$priority = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'BESTUURSLID'=>4,'ADMIN'=>5,'BANDLID'=>0];
 $titleOptions = ['', 'Dhr.', 'Mevr.', 'Dr.', 'Prof.'];
 
 function primaryRoleFrom(array $roles, array $priority): string {

@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER','FINANCIEEL']);
+requireSectionAccess('financien', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -38,6 +38,7 @@ $data = [
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireSectionAccess('financien', 'write');
   requireCsrf($_POST['csrf'] ?? '');
 
   $data['account_id'] = (int)($_POST['account_id'] ?? 0);

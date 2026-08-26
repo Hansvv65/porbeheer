@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN']);
+requireSectionAccess('admin', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -13,16 +13,20 @@ $bg = themeImage('admin', $pdo);
 
 
 $tiles = [
-  ['title'=>'Gebruikers',       'href'=>'/admin/users.php',          'roles'=>['ADMIN']],
-  ['title'=>'Configuratie',     'href'=>'/admin/settings.php',       'roles'=>['ADMIN']],
-  ['title'=>'Audit logging',    'href'=>'/admin/audit_logging.php',  'roles'=>['ADMIN']],
-  ['title'=>'Database schema',  'href'=>'/admin/db_schema.php',      'roles'=>['ADMIN']],
-  ['title'=>'Uitloggen',        'href'=>'/logout.php',               'roles'=>['ADMIN']],
-  ['title'=>'Changelog',        'href'=>'/admin/changelog.php',      'roles'=>['ADMIN']],
+  ['title'=>'Gebruikers',       'href'=>'/admin/users.php',          'section'=>'admin'],
+  ['title'=>'Rechtenmatrix',    'href'=>'/admin/rechtenmatrix.php',  'section'=>'admin'],
+  ['title'=>'Configuratie',     'href'=>'/admin/settings.php',       'section'=>'admin'],
+  ['title'=>'Audit logging',    'href'=>'/admin/audit_logging.php',  'section'=>'admin'],
+  ['title'=>'Database schema',  'href'=>'/admin/db_schema.php',      'section'=>'admin'],
+  ['title'=>'Uitloggen',        'href'=>'/logout.php',               'section'=>null],
+  ['title'=>'Changelog',        'href'=>'/admin/changelog.php',      'section'=>'admin'],
 ];
 
-function allowedTile(array $tile, string $role): bool {
-  return in_array($role, $tile['roles'], true);
+function allowedTile(PDO $pdo, array $tile): bool {
+  if ($tile['section'] === null) {
+    return true;
+  }
+  return hasSectionAccess($pdo, $tile['section'], 'read');
 }
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
@@ -126,11 +130,12 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
         <div class="grid">
           <?php foreach ($tiles as $t): ?>
             <?php
-              $ok = allowedTile($t, $role);
+              $ok = allowedTile($pdo, $t);
               $cls = $ok ? 'tile' : 'tile disabled';
+              $tip = $ok ? '' : ' title="Je hebt hier geen toegang toe"';
               $href = $ok ? $t['href'] : '#';
             ?>
-            <a class="<?= $cls ?>" href="<?= h($href) ?>">
+            <a class="<?= $cls ?>" href="<?= h($href) ?>"<?= $tip ?>>
               <?= h($t['title']) ?>
             </a>
           <?php endforeach; ?>

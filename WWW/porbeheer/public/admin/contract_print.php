@@ -20,7 +20,7 @@ require_once PROJECT_ROOT . '/app/contract_lib.php';
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
-requireRole(['ADMIN', 'BEHEER', 'BESTUURSLID']);
+requireSectionAccess('sleutels', 'read');
 
 $user = currentUser();
 

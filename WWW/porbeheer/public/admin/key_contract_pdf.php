@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('sleutels', 'read');
 
 $keyId = (int)($_GET['key_id'] ?? 0);
 if ($keyId <= 0) die('Ongeldige sleutel');
