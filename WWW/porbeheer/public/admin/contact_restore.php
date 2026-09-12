@@ -5,6 +5,9 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 
 requireSectionAccess('contacten', 'write');
+if (hasOwnOnlySectionAccess($pdo, 'contacten')) {
+    renderNoAccessPage('contacten');
+}
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';

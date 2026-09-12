@@ -7,12 +7,21 @@ include __DIR__ . '/../assets/includes/header.php';
 
 requireSectionAccess('contacten', 'write');
 
+$id     = (int)($_GET['id'] ?? ($_POST['id'] ?? 0));
+$isEdit = $id > 0;
+
+// Alleen-eigen (BANDLID): mag alleen zijn eigen gekoppelde contact bewerken,
+// geen nieuwe contacten aanmaken en geen andere contacten wijzigen.
+if (hasOwnOnlySectionAccess($pdo, 'contacten')) {
+    $myContactId = currentContactId();
+    if (!$isEdit || $myContactId === null || $id !== $myContactId) {
+        renderNoAccessPage('contacten');
+    }
+}
+
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg   = themeImage('contacts', $pdo);
-
-$id     = (int)($_GET['id'] ?? ($_POST['id'] ?? 0));
-$isEdit = $id > 0;
 
 $row = [
     'first_name'    => '',
@@ -56,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Hard-delete
     if ($action === 'delete') {
-        if (!hasSectionAccess($pdo, 'contacten', 'write')) {
+        if (!hasSectionAccess($pdo, 'contacten', 'write') || hasOwnOnlySectionAccess($pdo, 'contacten')) {
             header('Location: /admin/contact_edit.php');
             exit;
         }
@@ -357,19 +366,19 @@ select option{ background:#222; color:#fff; }
         <div class="actions">
           <button class="btn" type="submit"><?= $isEdit ? 'Opslaan' : 'Aanmaken' ?></button>
           <a class="btn secondary" href="/admin/contacts.php">Annuleren</a>
-
-          <?php if ($isEdit && hasSectionAccess($pdo, 'contacten', 'write')): ?>
-            <form method="post" action="/admin/contact_edit.php" style="display:inline;">
-              <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
-              <input type="hidden" name="id" value="<?= (int)$id ?>">
-              <input type="hidden" name="action" value="delete">
-              <button class="btn danger" type="submit" onclick="return confirm('Definitief verwijderen? Dit kan niet ongedaan gemaakt worden.')">Definitief verwijderen</button>
-            </form>
-          <?php endif; ?>
         </div>
 
         <div class="smallnote">* verplicht veld. Telefoon: Nederlands 06-formaat (06-12345678) of buitenlands (+32...).</div>
       </form>
+
+      <?php if ($isEdit && hasSectionAccess($pdo, 'contacten', 'write') && !hasOwnOnlySectionAccess($pdo, 'contacten')): ?>
+        <form method="post" action="/admin/contact_edit.php" style="display:inline;margin-top:12px;">
+          <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
+          <input type="hidden" name="id" value="<?= (int)$id ?>">
+          <input type="hidden" name="action" value="delete">
+          <button class="btn danger" type="submit" onclick="return confirm('Definitief verwijderen? Dit kan niet ongedaan gemaakt worden.')">Definitief verwijderen</button>
+        </form>
+      <?php endif; ?>
     </div>
   </div>
 </div>

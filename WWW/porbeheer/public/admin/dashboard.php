@@ -175,8 +175,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
 
             <div class="userbox">
                 <div class="line1">
-                    Hallo <a href="/admin/account.php"><?= h($user['username'] ?? '') ?></a> ·
-                    Hoogste rol: <?= h($topRole) ?>
+                    Hallo <a href="/admin/account.php"><?= h(($user['first_name'] ?? '') !== '' ? $user['first_name'] : ($user['username'] ?? '')) ?></a>
                 </div>
 
                 <div class="roles-badge">

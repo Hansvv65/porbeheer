@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/auth.php';
+requireRole(['ADMIN', 'BEHEER']);
 include __DIR__ . '/assets/includes/header.php';
 
 $user = currentUser();
@@ -213,7 +214,7 @@ a{color:#fff;text-decoration:none}
 
       <div class="userbox">
         <div class="line1">
-          Hallo <a href="/admin/account.php"><?= h($user['username'] ?? '') ?></a> · Jouw rol is <?= h($role) ?>
+          Hallo <a href="/admin/account.php"><?= h(($user['first_name'] ?? '') !== '' ? $user['first_name'] : ($user['username'] ?? '')) ?></a> · Jouw rol is <?= h($role) ?>
         </div>
 
         <div class="line2">

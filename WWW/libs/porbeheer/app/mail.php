@@ -60,6 +60,24 @@ function sendEmail(string $to, string $subject, string $htmlBody, string $textBo
         $mail->addAddress($to);
         $mail->Subject = $subject;
         $mail->isHTML(true);
+
+        // Bannerplaatje in de mailopmaak (zie mail.php::mailLayout()) wordt
+        // ingesloten i.p.v. als externe URL geladen -- reist gewoon mee met
+        // de mail, geen afhankelijkheid van een publiek bereikbare server.
+        if (str_contains($htmlBody, 'cid:por-banner-header')) {
+            $bannerPath = PUBLIC_ROOT . '/assets/images/POR-logo-email-header-donkere-banner.png';
+            if (is_file($bannerPath) && is_readable($bannerPath)) {
+                $mail->addEmbeddedImage($bannerPath, 'por-banner-header', 'banner.png', 'base64', 'image/png');
+                if (function_exists('auditLog') && isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) {
+                    auditLog($GLOBALS['pdo'], 'MAIL', 'mail/banner_embedded', ['path' => $bannerPath]);
+                }
+            } elseif (function_exists('auditLog') && isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) {
+                auditLog($GLOBALS['pdo'], 'MAIL', 'mail/banner_not_found', ['path' => $bannerPath]);
+            }
+        } elseif (function_exists('auditLog') && isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) {
+            auditLog($GLOBALS['pdo'], 'MAIL', 'mail/banner_cid_not_in_body', ['subject' => mb_substr($subject, 0, 190)]);
+        }
+
         $mail->Body    = $htmlBody;
         $mail->AltBody = $textBody !== '' ? $textBody : trim(strip_tags($htmlBody));
 
@@ -124,3 +142,29 @@ function sendMail(string $to, string $subject, string $htmlBody, string $textBod
 {
     sendEmail($to, $subject, $htmlBody, $textBody, $attachments);
 }
+
+/**
+ * Gedeelde opmaak voor alle uitgaande Porbeheer-mails, met het donkere
+ * bannerbeeld bovenaan. Vervangt de losse mailLayout()-kopieën die eerder
+ * apart in register.php, users_detail.php en forgot.php stonden.
+ */
+function mailLayout(string $title, string $intro, string $contentHtml): string
+{
+    return '
+    <div style="margin:0;padding:24px;background:#f4f7fb;font-family:Arial,sans-serif;color:#243447;">
+      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);">
+        <div style="background:#0b0b0b;">
+          <img src="cid:por-banner-header" alt="POR - Popoefenruimte Zevenaar" width="680" style="display:block;width:100%;max-width:680px;height:auto;">
+        </div>
+        <div style="padding:28px 24px;">
+          <h2 style="margin:0 0 12px 0;font-size:22px;color:#1f3b57;">' . h($title) . '</h2>
+          <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#425466;">' . h($intro) . '</p>
+          <div style="font-size:15px;line-height:1.7;color:#243447;">' . $contentHtml . '</div>
+        </div>
+        <div style="padding:16px 24px;background:#f8fbff;border-top:1px solid #d9e2ec;font-size:12px;color:#6b7c93;">
+          Dit is een automatisch bericht van Porbeheer.
+        </div>
+      </div>
+    </div>';
+}
+

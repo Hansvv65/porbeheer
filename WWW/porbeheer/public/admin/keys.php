@@ -11,6 +11,20 @@ requireSectionAccess('sleutels', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+
+// Alleen-eigen (BANDLID): de Contract-knop mag alleen bij sleutels van de
+// eigen band(en) staan, niet bij elke band -- contract_edit.php blokkeert
+// dit ook al serverside, maar de knop moet er dan ook niet staan.
+$myBandIdsForKeys = null; // null = geen beperking (volledige toegang)
+if (hasOwnOnlySectionAccess($pdo, 'sleutels')) {
+    $myBandIdsForKeys = [];
+    $myContactId = currentContactId();
+    if ($myContactId !== null) {
+        $mb = $pdo->prepare("SELECT id FROM bands WHERE (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL");
+        $mb->execute([$myContactId, $myContactId]);
+        $myBandIdsForKeys = array_map('intval', $mb->fetchAll(PDO::FETCH_COLUMN));
+    }
+}
 $bg = themeImage('keys', $pdo);
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/keys.php');
@@ -187,7 +201,6 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
       <div class="kpi">
         <div class="pill">Kasten: <strong style="color:#fff"><?= (int)$lockerCount ?></strong> (vrij: <strong style="color:#fff"><?= (int)$freeLockers ?></strong>)</div>
         <div class="pill">Sleutels: <strong style="color:#fff"><?= (int)$keyCount ?></strong> (master: <strong style="color:#fff"><?= (int)$masterCount ?></strong>, extern: <strong style="color:#fff"><?= (int)$externalCount ?></strong>)</div>
-        <?php if (hasSectionAccess($pdo, 'sleutels', 'write')): ?><a class="pill" href="/admin/keys_edit.php">Nieuwe sleutel</a><?php endif; ?>
       </div>
     </div>
 
@@ -195,8 +208,6 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
       <div class="line1"><?= h($user['username'] ?? '') ?> · <?= h($role) ?></div>
       <div class="line2">
         <a href="/admin/dashboard.php">Dashboard</a>
-        <a href="#kasten">POR-kasten</a>
-        <a href="#sleutels">Sleutels</a>
       </div>
     </div>
   </div>
@@ -358,7 +369,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
                     <div class="small" style="margin-top:6px">
                       Aan:
                       <?php if ($contactId > 0): ?>
-                        <a href="/admin/contacts_view.php?id=<?= $contactId ?>"><?= h($contactName) ?></a>
+                        <a href="/admin/contact_edit.php?id=<?= $contactId ?>"><?= h($contactName) ?></a>
                       <?php else: ?>
                         <span class="small">Onbekend contact</span>
                       <?php endif; ?>
@@ -377,7 +388,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
                 </td>
                 <td>
                   <?php if (hasSectionAccess($pdo, 'sleutels', 'write')): ?><a class="btn btn-sm" href="/admin/keys_edit.php?id=<?= $keyId ?>">Bewerken</a><?php endif; ?>
-                      <?php if ($isIssued): ?>
+                      <?php if ($isIssued && ($myBandIdsForKeys === null || in_array((int)($r['band_id'] ?? 0), $myBandIdsForKeys, true))): ?>
                           <a class="btn btn-sm btn-contract" href="/admin/contract_edit.php?id=<?= $keyId ?>" title="Contract bekijken">📄 Contract</a>
                       <?php endif; ?>
                 </td>

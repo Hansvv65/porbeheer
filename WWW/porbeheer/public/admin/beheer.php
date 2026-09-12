@@ -15,6 +15,7 @@ $bg = themeImage('admin', $pdo);
 $tiles = [
   ['title'=>'Gebruikers',       'href'=>'/admin/users.php',          'section'=>'admin'],
   ['title'=>'Rechtenmatrix',    'href'=>'/admin/rechtenmatrix.php',  'section'=>'admin'],
+  ['title'=>'Kasten & Sleutels','href'=>'/admin/lockers_keys.php',   'section'=>'admin'],
   ['title'=>'Configuratie',     'href'=>'/admin/settings.php',       'section'=>'admin'],
   ['title'=>'Audit logging',    'href'=>'/admin/audit_logging.php',  'section'=>'admin'],
   ['title'=>'Database schema',  'href'=>'/admin/db_schema.php',      'section'=>'admin'],

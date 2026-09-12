@@ -11,6 +11,11 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
 
+// Alleen-eigen (BANDLID): Bewerken-knop mag alleen bij het eigen gekoppelde contact.
+$contactenCanWrite = hasSectionAccess($pdo, 'contacten', 'write');
+$contactenOwnOnly  = hasOwnOnlySectionAccess($pdo, 'contacten');
+$myOwnContactId    = $contactenOwnOnly ? currentContactId() : null;
+
 if (!function_exists('h')) {
     function h(?string $v): string {
         return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
@@ -148,7 +153,9 @@ th{background:rgba(255,255,255,.05)}
  <td><?= h($c['phone'] ?? '') ?></td>
  <td><?= h($c['bands'] ?? '—') ?></td>
  <td>
-   <a href="/admin/contact_edit.php?id=<?= (int)$c['id'] ?>">Bewerken</a>
+   <?php if ($contactenCanWrite && (!$contactenOwnOnly || (int)$c['id'] === $myOwnContactId)): ?>
+     <a href="/admin/contact_edit.php?id=<?= (int)$c['id'] ?>">Bewerken</a>
+   <?php endif; ?>
  </td>
 </tr>
 <?php endforeach; ?>

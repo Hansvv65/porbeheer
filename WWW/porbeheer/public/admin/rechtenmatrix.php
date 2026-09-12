@@ -44,6 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 if ($value === 'read') {
                     $ins->execute([$r, $s, 'read', 0]);
+                } elseif ($value === 'read_own') {
+                    $ins->execute([$r, $s, 'read', 1]);
                 } elseif ($value === 'write') {
                     $ins->execute([$r, $s, 'write', 0]);
                 } elseif ($value === 'write_own') {
@@ -75,7 +77,7 @@ foreach ($rows as $row) {
 function cellValue(array $current, string $role, string $section): string {
     $entry = $current[$role][$section] ?? null;
     if ($entry === null) return 'none';
-    if ($entry['level'] === 'read') return 'read';
+    if ($entry['level'] === 'read') return $entry['own_only'] ? 'read_own' : 'read';
     return $entry['own_only'] ? 'write_own' : 'write';
 }
 
@@ -156,6 +158,7 @@ table.matrix select:disabled{opacity:.7;}
                       <select name="cell_<?= h($r) ?>_<?= h($sKey) ?>" <?= $canEdit ? '' : 'disabled' ?>>
                         <option value="none" <?= $val === 'none' ? 'selected' : '' ?>>Geen</option>
                         <option value="read" <?= $val === 'read' ? 'selected' : '' ?>>Lezen</option>
+                        <option value="read_own" <?= $val === 'read_own' ? 'selected' : '' ?>>Lezen (alleen eigen)</option>
                         <option value="write" <?= $val === 'write' ? 'selected' : '' ?>>Bewerken</option>
                         <option value="write_own" <?= $val === 'write_own' ? 'selected' : '' ?>>Bewerken (alleen eigen)</option>
                       </select>

@@ -31,6 +31,9 @@ if (isset($_GET['cancel2fa'])) {
 
 $err = null;
 $info = null;
+if (isset($_GET['csrf_expired'])) {
+    $info = 'Je sessie was verlopen (te lang gewacht met inloggen). Probeer het opnieuw.';
+}
 $email = '';
 $ip = getClientIp();
 $timestamp = date('Y-m-d H:i:s');
@@ -293,7 +296,7 @@ input:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0
     <div class="card">
       <a class="helpbtn" href="/Handleiding-Inloggen-Porbeheer.pdf" target="_blank" rel="noopener noreferrer" title="Handleiding inloggen (PDF)">?</a>
 
-      <h1>POP Zevenaar</h1>
+      <h1>POR Zevenaar</h1>
       <div class="sub">Veilig inloggen met wachtwoord en 2FA</div>
 
       <?php if($err):?><div class="msg err"><?=h($err)?></div><?php endif;?>

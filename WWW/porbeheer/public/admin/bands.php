@@ -7,6 +7,20 @@ include __DIR__ . '/../assets/includes/header.php';
 
 requireSectionAccess('bands', 'read');
 
+// Alleen-eigen (BANDLID): de bandnaam-link naar band_detail.php mag alleen
+// klikbaar zijn voor de eigen band(en), niet voor elke band -- anders is het
+// een dood linkje voor de rest.
+$myBandIdsForList = null; // null = geen beperking
+if (hasOwnOnlySectionAccess($pdo, 'bands')) {
+    $myBandIdsForList = [];
+    $myContactId = currentContactId();
+    if ($myContactId !== null) {
+        $mb = $pdo->prepare("SELECT id FROM bands WHERE (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL");
+        $mb->execute([$myContactId, $myContactId]);
+        $myBandIdsForList = array_map('intval', $mb->fetchAll(PDO::FETCH_COLUMN));
+    }
+}
+
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('bands', $pdo);
@@ -381,7 +395,11 @@ try {
             <tr>
               <td>
                 <div class="meta">
-                  <a class="bandlink" href="/admin/band_detail.php?id=<?= $bid ?>"><?= h((string)$b['name']) ?></a>
+                  <?php if ($myBandIdsForList === null || in_array($bid, $myBandIdsForList, true)): ?>
+                    <a class="bandlink" href="/admin/band_detail.php?id=<?= $bid ?>"><?= h((string)$b['name']) ?></a>
+                  <?php else: ?>
+                    <span class="bandlink" style="cursor:default;"><?= h((string)$b['name']) ?></span>
+                  <?php endif; ?>
                   <div class="small"><?= h((string)($b['city'] ?? '')) ?></div>
                 </div>
               </td>

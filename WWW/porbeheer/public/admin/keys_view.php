@@ -54,7 +54,7 @@ a{color:#fff;}
         <p><strong>Kast:</strong> <?= h($key['locker_no'] ?? '—') ?></p>
         <p><strong>Band:</strong> <?= h($key['band_name'] ?? '—') ?></p>
         <p><strong>Status:</strong> <?= $key['active'] ? 'Actief' : 'Inactief' ?></p>
-        <p><a href="/admin/keys_edit.php?id=<?= $id ?>">Bewerken</a> | <a href="/admin/keys.php">Terug naar overzicht</a></p>
+        <p><?php if (hasSectionAccess($pdo, 'sleutels', 'write')): ?><a href="/admin/keys_edit.php?id=<?= $id ?>">Bewerken</a> | <?php endif; ?><a href="/admin/keys.php">Terug naar overzicht</a></p>
     </div>
 </div></div>
 </body>

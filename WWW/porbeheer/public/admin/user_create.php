@@ -110,16 +110,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // Verstuur verificatiemail (gebruik voornaam of e-mail als aanhef)
       $greeting = $first_name ?: $email;
       $verifyLink = appUrl("/verify.php?email=" . urlencode($email) . "&token=" . $verificationToken);
-      $html = "
-        <div style='font-family:Arial; max-width:600px;'>
-          <h2>Welkom bij Porbeheer</h2>
-          <p>Beste " . h($greeting) . ",</p>
-          <p>Je account is aangemaakt. Klik op onderstaande link om je e‑mailadres te bevestigen:</p>
-          <p><a href='$verifyLink' style='display:inline-block;padding:10px 20px; background:#bf721f; color:#fff; text-decoration:none; border-radius:5px;'>Bevestig e‑mail</a></p>
-          <p>Of kopieer: $verifyLink</p>
-          <p>De link is 24 uur geldig.</p>
-          <p>Met vriendelijke groet,<br>Porbeheer</p>
-        </div>";
+      $html = mailLayout(
+          'Welkom bij Porbeheer',
+          'Beste ' . $greeting . ', je account is aangemaakt. Klik op onderstaande link om je e‑mailadres te bevestigen:',
+          '<p><a href="' . h($verifyLink) . '" style="display:inline-block;padding:10px 20px;background:#bf721f;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;">Bevestig e‑mail</a></p>
+           <p style="font-size:13px;color:#6b7c93;">Of kopieer: ' . h($verifyLink) . '</p>
+           <p style="font-size:13px;color:#6b7c93;">De link is 24 uur geldig.</p>'
+      );
       sendEmail($email, 'Bevestig je e‑mailadres voor Porbeheer', $html);
 
       auditLog($pdo, 'USER_CREATE', 'admin/user_create.php', [

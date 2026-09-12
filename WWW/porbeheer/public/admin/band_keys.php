@@ -31,6 +31,24 @@ if (!function_exists('h')) {
 $bandId = (int)($_GET['band_id'] ?? ($_POST['band_id'] ?? 0));
 if ($bandId <= 0) { header('Location: /admin/bands.php'); exit; }
 
+// Alleen-eigen (BANDLID): mag alleen de band(en) zien/beheren waar hij zelf
+// als eerste of tweede contact aan gekoppeld is, niet elke band door het
+// band_id in de link te veranderen.
+if (hasOwnOnlySectionAccess($pdo, 'bands')) {
+    $myContactId = currentContactId();
+    $ownsThisBand = false;
+    if ($myContactId !== null) {
+        $chk = $pdo->prepare("SELECT id FROM bands WHERE id = ? AND (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL");
+        $chk->execute([$bandId, $myContactId, $myContactId]);
+        $ownsThisBand = (bool)$chk->fetchColumn();
+    }
+    if (!$ownsThisBand) {
+        renderNoAccessPage('bands');
+    }
+}
+
+$canWrite = hasSectionAccess($pdo, 'bands', 'write');
+
 auditLog($pdo, 'PAGE_VIEW', 'admin/band_keys.php band_id=' . $bandId);
 
 /* ===== Band ===== */
@@ -392,6 +410,7 @@ function toggleKeyOptions(){
         <h2>POR-kasten van deze band</h2>
         <div class="small">Koppel een vrije kast of maak een kast weer vrij. Kasten zelf kun je niet toevoegen/verwijderen.</div>
 
+        <?php if ($canWrite): ?>
         <form method="post" action="/admin/band_keys.php?band_id=<?= (int)$bandId ?>">
           <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
           <input type="hidden" name="band_id" value="<?= (int)$bandId ?>">
@@ -407,6 +426,7 @@ function toggleKeyOptions(){
           <?php if (!$freeLockers): ?><div class="hint">Geen vrije kasten beschikbaar.</div><?php endif; ?>
           <button class="btn" type="submit">Kast toewijzen</button>
         </form>
+        <?php endif; ?>
 
         <div class="tablewrap" style="margin-top:12px">
           <table>
@@ -417,6 +437,7 @@ function toggleKeyOptions(){
                 <td>
                   <strong><?= h((string)$l['locker_no']) ?></strong>
                   <?php if (!empty($l['notes'])): ?><div class="small"><?= h((string)$l['notes']) ?></div><?php endif; ?>
+                  <?php if ($canWrite): ?>
                   <details style="margin-top:6px;">
                     <summary>✏️ Notitie</summary>
                     <form method="post" action="/admin/band_keys.php?band_id=<?= (int)$bandId ?>" style="margin-top:6px">
@@ -429,8 +450,10 @@ function toggleKeyOptions(){
                       <button class="btn btn-sm" type="submit" style="margin-top:6px">Opslaan</button>
                     </form>
                   </details>
+                  <?php endif; ?>
                 </td>
                 <td>
+                  <?php if ($canWrite): ?>
                   <form method="post" action="/admin/band_keys.php?band_id=<?= (int)$bandId ?>" style="margin:0">
                     <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
                     <input type="hidden" name="band_id" value="<?= (int)$bandId ?>">
@@ -439,6 +462,7 @@ function toggleKeyOptions(){
                     <input type="hidden" name="locker_id" value="<?= (int)$l['id'] ?>">
                     <button class="btn btn-sm" type="submit">Vrijmaken</button>
                   </form>
+                  <?php endif; ?>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -448,6 +472,7 @@ function toggleKeyOptions(){
         </div>
       </div>
 
+      <?php if ($canWrite): ?>
       <!-- ===== Transactie ===== -->
       <div class="card">
         <h2>Sleutel uitgeven / retour</h2>
@@ -504,6 +529,7 @@ function toggleKeyOptions(){
           <button class="btn" type="submit">Opslaan</button>
         </form>
       </div>
+      <?php endif; ?>
 
     </div>
 

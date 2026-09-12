@@ -12,26 +12,6 @@ $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
 
-function mailLayout(string $title, string $intro, string $contentHtml): string {
-    return '
-    <div style="margin:0;padding:24px;background:#f4f7fb;font-family:Arial,sans-serif;color:#243447;">
-      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);">
-        <div style="padding:18px 24px;background:linear-gradient(180deg,#eef6ff,#e6f0fb);border-bottom:1px solid #d9e2ec;">
-          <div style="font-size:22px;font-weight:700;color:#1f3b57;">Porbeheer</div>
-          <div style="margin-top:4px;font-size:13px;color:#5b7083;">POP Oefenruimte Zevenaar</div>
-        </div>
-        <div style="padding:28px 24px;">
-          <h2 style="margin:0 0 12px 0;font-size:22px;color:#1f3b57;">' . h($title) . '</h2>
-          <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#425466;">' . h($intro) . '</p>
-          <div style="font-size:15px;line-height:1.7;color:#243447;">' . $contentHtml . '</div>
-        </div>
-        <div style="padding:16px 24px;background:#f8fbff;border-top:1px solid #d9e2ec;font-size:12px;color:#6b7c93;">
-          Dit is een automatisch bericht van Porbeheer.
-        </div>
-      </div>
-    </div>';
-}
-
 // ========== HELPER FUNCTIES (niet in auth.php) ==========
 function loadUser(PDO $pdo, int $id): array {
     $st = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
@@ -52,18 +32,6 @@ function countAdmins(PDO $pdo): int {
         JOIN users u ON u.id = ur.user_id
         WHERE ur.role = 'ADMIN' AND u.deleted_at IS NULL
     ")->fetchColumn();
-}
-
-function syncActiveWithStatus(PDO $pdo, int $id): void {
-    $pdo->prepare("
-        UPDATE users
-        SET active = CASE
-            WHEN deleted_at IS NOT NULL THEN 0
-            WHEN status = 'ACTIVE' THEN 1
-            ELSE 0
-        END
-        WHERE id = ?
-    ")->execute([$id]);
 }
 
 function computePrimaryRole(array $roles, array $priority): string {
@@ -172,7 +140,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             auditLog($pdo, 'USER_APPROVE', 'admin/users_detail.php', ['id'=>$id]);
             // Stuur eventueel mail (kort gehouden)
             if (!empty($target['email'])) {
-                $html = mailLayout('Aanmelding goedgekeurd', 'Je account is goedgekeurd.', '<p>Je kunt nu inloggen.</p>');
+                $loginLink = appUrl('/login.php');
+                $html = mailLayout('Aanmelding goedgekeurd', 'Je account is goedgekeurd.',
+                    '<p>Je kunt nu inloggen.</p><p style="margin-top:16px;"><a href="' . h($loginLink) . '" style="display:inline-block;padding:10px 20px;background:#bf721f;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;">Naar inloggen</a></p>'
+                );
                 sendEmail($target['email'], 'Je aanmelding is goedgekeurd', $html);
             }
         }
@@ -253,11 +224,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // 6b. Bestuurslid-vlag en contactkoppeling (los van rollen)
+    // 6b. Contactkoppeling (los van rollen) -- bestuurslid loopt inmiddels
+    // volledig via de rol zelf (zie planning_edit.php's mailfunctie), dus
+    // dat losse vlaggetje is hier bewust weer weggehaald.
     if ($action === 'set_extra') {
         if ($isDeleted) $errors[] = 'User is verwijderd. Herstel eerst.';
         else {
-            $isBestuurslid = isset($_POST['is_bestuurslid']) ? 1 : 0;
             $contactIdRaw = trim((string)($_POST['contact_id'] ?? ''));
             $newContactId = $contactIdRaw === '' ? null : (int)$contactIdRaw;
 
@@ -275,12 +247,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if (!$errors) {
-                $pdo->prepare("UPDATE users SET is_bestuurslid = ?, contact_id = ? WHERE id = ?")
-                    ->execute([$isBestuurslid, $newContactId, $id]);
+                $pdo->prepare("UPDATE users SET contact_id = ? WHERE id = ?")
+                    ->execute([$newContactId, $id]);
                 if ($id === $currentUserId && function_exists('refreshSessionUser')) refreshSessionUser($pdo, $id);
-                $success = 'Bestuurslid-status en contactkoppeling opgeslagen.';
+                $success = 'Contactkoppeling opgeslagen.';
                 auditLog($pdo, 'USER_EXTRA_SET', 'admin/users_detail.php', [
-                    'id' => $id, 'is_bestuurslid' => $isBestuurslid, 'contact_id' => $newContactId,
+                    'id' => $id, 'contact_id' => $newContactId,
                 ]);
             }
         }
@@ -729,18 +701,12 @@ a:hover{ opacity:.95; }
           </form>
         </div>
 
-        <!-- Blok 3b: Bestuurslid & contactkoppeling -->
+        <!-- Blok 3b: Contactkoppeling -->
         <div class="box">
-          <div class="label">Bestuurslid & contactkoppeling</div>
+          <div class="label">Contactkoppeling</div>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
             <input type="hidden" name="id" value="<?= (int)$target['id'] ?>">
-            <label class="roleitem" style="display:block;margin-bottom:10px;">
-              <input type="checkbox" name="is_bestuurslid" value="1"
-                <?= !empty($target['is_bestuurslid']) ? 'checked' : '' ?>
-                <?= $isDeleted ? 'disabled' : '' ?>>
-              Bestuurslid (bepaalt alleen de mailinglijst, geen paginarechten)
-            </label>
             <label class="small" style="display:block;margin-bottom:4px;">Gekoppeld contact (voor een toekomstig bandlid-account)</label>
             <select name="contact_id" class="inp" <?= $isDeleted ? 'disabled' : '' ?>>
               <option value="">-- geen koppeling --</option>

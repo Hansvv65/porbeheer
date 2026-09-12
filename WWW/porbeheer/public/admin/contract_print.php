@@ -59,6 +59,22 @@ $kst = $pdo->prepare("
 $kst->execute([(int)$kc['key_id']]);
 $key = $kst->fetch(PDO::FETCH_ASSOC) ?: ['key_code'=>'','description'=>'','locker_no'=>'','band_name'=>''];
 
+// Alleen-eigen (BANDLID): mag alleen het contract van zijn eigen band
+// bekijken, niet elk contract via het id in de link te veranderen. Deze
+// check staat bewust vóór alle PDF-logica hieronder, die blijft ongemoeid.
+if (hasOwnOnlySectionAccess($pdo, 'sleutels')) {
+    $myContactId = currentContactId();
+    $ownsThisBand = false;
+    if ($myContactId !== null && !empty($key['band_id'])) {
+        $chk = $pdo->prepare("SELECT id FROM bands WHERE id = ? AND (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL");
+        $chk->execute([(int)$key['band_id'], $myContactId, $myContactId]);
+        $ownsThisBand = (bool)$chk->fetchColumn();
+    }
+    if (!$ownsThisBand) {
+        renderNoAccessPage('sleutels');
+    }
+}
+
 // Opgeslagen velden (alleen nog voor de datum en de vrij ingevulde bandnaam)
 $d = [];
 if (!empty($kc['contract_data'])) {

@@ -7,6 +7,24 @@ include __DIR__ . '/../assets/includes/header.php';
 
 requireSectionAccess('bands', 'read');
 
+$id = (int)($_GET['id'] ?? 0);
+
+// Alleen-eigen (BANDLID): mag alleen zijn eigen band bekijken, niet elke band
+// door het id in de link te veranderen. Consistent met band_keys.php,
+// contract_print.php en contract_edit.php.
+if (hasOwnOnlySectionAccess($pdo, 'bands')) {
+    $myContactId = currentContactId();
+    $ownsThisBand = false;
+    if ($myContactId !== null && $id > 0) {
+        $chk = $pdo->prepare("SELECT id FROM bands WHERE id = ? AND (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL");
+        $chk->execute([$id, $myContactId, $myContactId]);
+        $ownsThisBand = (bool)$chk->fetchColumn();
+    }
+    if (!$ownsThisBand) {
+        renderNoAccessPage('bands');
+    }
+}
+
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('bands', $pdo);
@@ -26,7 +44,6 @@ function getSetting(PDO $pdo, string $key, string $default = '0.00'): string
     return $val !== false ? (string)$val : $default;
 }
 
-$id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) {
     header("Location: /admin/bands.php");
     exit;

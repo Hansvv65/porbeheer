@@ -16,17 +16,42 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 require_once PROJECT_ROOT . '/app/contract_lib.php';
-requireSectionAccess('sleutels', 'write');
+requireSectionAccess('sleutels', 'read');
+$canWriteContract = hasSectionAccess($pdo, 'sleutels', 'write');
 
 // =====================================================================
 // BINAIR: opgeslagen document tonen (vóór de JSON-afhandeling)
 // =====================================================================
 if (($_GET['action'] ?? '') === 'serve_document') {
     $docId = (int)($_GET['doc'] ?? 0);
-    $st = $pdo->prepare("SELECT * FROM key_contract_documents WHERE id = ? AND deleted_at IS NULL");
+    $st = $pdo->prepare("
+        SELECT kcd.*, l.band_id AS doc_band_id
+        FROM key_contract_documents kcd
+        JOIN key_contracts kc ON kc.id = kcd.key_contract_id
+        JOIN `keys` k ON k.id = kc.key_id
+        LEFT JOIN lockers l ON l.id = k.locker_id
+        WHERE kcd.id = ? AND kcd.deleted_at IS NULL
+    ");
     $st->execute([$docId]);
     $doc = $st->fetch(PDO::FETCH_ASSOC);
     if (!$doc) { http_response_code(404); exit('Document niet gevonden'); }
+
+    // Zelfde alleen-eigen-check als de rest van deze pagina -- anders kan
+    // een bandlid elk document-id proberen en zo andermans getekende
+    // contract inzien, ongeacht welke band er in het formulier getoond wordt.
+    if (hasOwnOnlySectionAccess($pdo, 'sleutels')) {
+        $myContactId = currentContactId();
+        $ownsThisDoc = false;
+        if ($myContactId !== null && !empty($doc['doc_band_id'])) {
+            $chk = $pdo->prepare("SELECT id FROM bands WHERE id = ? AND (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL");
+            $chk->execute([(int)$doc['doc_band_id'], $myContactId, $myContactId]);
+            $ownsThisDoc = (bool)$chk->fetchColumn();
+        }
+        if (!$ownsThisDoc) {
+            renderNoAccessPage('sleutels');
+        }
+    }
+
     auditLog($pdo, 'CONTRACT_DOC_VIEW', 'doc_id=' . $docId);
     contractStreamDocument($doc, true); // exit binnen
 }
@@ -38,6 +63,7 @@ if (isset($_GET['action'])) {
     header('Content-Type: application/json');
     try {
         if ($_GET['action'] === 'get_lockers_for_band') {
+            if (!$canWriteContract) { http_response_code(403); echo json_encode(['error' => 'Geen toegang']); exit; }
             $bandId = (int)($_GET['band_id'] ?? 0);
             if ($bandId <= 0) { echo json_encode([]); exit; }
             $stmt = $pdo->prepare("SELECT id, locker_no FROM lockers WHERE band_id = ? AND deleted_at IS NULL ORDER BY locker_no");
@@ -46,6 +72,7 @@ if (isset($_GET['action'])) {
             exit;
         }
         if ($_GET['action'] === 'get_band_contacts') {
+            if (!$canWriteContract) { http_response_code(403); echo json_encode(['error' => 'Geen toegang']); exit; }
             $lockerId = (int)($_GET['locker_id'] ?? 0);
             $response = ['band_id' => null, 'band_name' => null, 'contacts' => []];
             if ($lockerId > 0) {
@@ -78,6 +105,20 @@ if (isset($_GET['action'])) {
         }
         if ($_GET['action'] === 'get_contacts_for_band') {
             $bandId = (int)($_GET['band_id'] ?? 0);
+            if (!$canWriteContract) {
+                // Alleen-eigen lezers mogen dit wel, maar dan alleen voor hun eigen band
+                // (nodig om de huidige ondertekenaar te tonen bij het bekijken).
+                $allowed = false;
+                if (hasOwnOnlySectionAccess($pdo, 'sleutels')) {
+                    $myContactId = currentContactId();
+                    if ($myContactId !== null && $bandId > 0) {
+                        $chk = $pdo->prepare("SELECT id FROM bands WHERE id = ? AND (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL");
+                        $chk->execute([$bandId, $myContactId, $myContactId]);
+                        $allowed = (bool)$chk->fetchColumn();
+                    }
+                }
+                if (!$allowed) { http_response_code(403); echo json_encode(['error' => 'Geen toegang']); exit; }
+            }
             if ($bandId <= 0) { echo json_encode([]); exit; }
             $stmt = $pdo->prepare("
                 SELECT c.id, c.first_name, c.tussenvoegsel, c.last_name, c.name, c.email
@@ -97,6 +138,7 @@ if (isset($_GET['action'])) {
             exit;
         }
         if ($_GET['action'] === 'get_contacts_without_band') {
+            if (!$canWriteContract) { http_response_code(403); echo json_encode(['error' => 'Geen toegang']); exit; }
             $stmt = $pdo->query("
                 SELECT c.id, c.first_name, c.tussenvoegsel, c.last_name, c.name, c.email
                 FROM contacts c
@@ -117,6 +159,7 @@ if (isset($_GET['action'])) {
             exit;
         }
         if ($_GET['action'] === 'get_all_contacts') {
+            if (!$canWriteContract) { http_response_code(403); echo json_encode(['error' => 'Geen toegang']); exit; }
             $stmt = $pdo->query("SELECT id, name, email FROM contacts WHERE deleted_at IS NULL ORDER BY name");
             echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
             exit;
@@ -188,6 +231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['ajax_action'] ?? '') === '
 
 // --- document verwijderen ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_action'] ?? '') === 'delete_document') {
+    if (!$canWriteContract) { renderNoAccessPage('sleutels'); }
     $returnId = (int)($_POST['return_id'] ?? 0);
     try {
         requireCsrf($_POST['csrf'] ?? '');
@@ -215,6 +259,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_action'] ?? '') === '
 
 // --- los document uploaden (PDF of meerdere foto's) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_action'] ?? '') === 'admin_upload') {
+    if (!$canWriteContract) { renderNoAccessPage('sleutels'); }
     $returnId = (int)($_POST['return_id'] ?? 0);
     try {
         requireCsrf($_POST['csrf'] ?? '');
@@ -308,6 +353,22 @@ if ($row['locker_id']) {
 }
 
 $hasBand = !empty($currentBandName);
+
+// Alleen-eigen (BANDLID): mag alleen het contract van zijn eigen band
+// bekijken. De PDF-/document-logica hieronder blijft ongewijzigd, dit is
+// puur een toegangscheck vóóraf.
+if (hasOwnOnlySectionAccess($pdo, 'sleutels')) {
+    $myContactId = currentContactId();
+    $ownsThisBand = false;
+    if ($myContactId !== null && $currentBandId) {
+        $chk = $pdo->prepare("SELECT id FROM bands WHERE id = ? AND (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL");
+        $chk->execute([(int)$currentBandId, $myContactId, $myContactId]);
+        $ownsThisBand = (bool)$chk->fetchColumn();
+    }
+    if (!$ownsThisBand) {
+        renderNoAccessPage('sleutels');
+    }
+}
 
 $existingContract = null; $selectedBandContactId = null; $selectedBoardMemberId = null;
 $contractLocation = 'Pop Oefenruimte Zevenaar';
@@ -495,6 +556,7 @@ if (isset($_GET['preview_pdf'])) {
 
 // ---------- save_contract (getekend bestand -> FILESYSTEM) ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_contract'])) {
+    if (!$canWriteContract) { renderNoAccessPage('sleutels'); }
     try {
         requireCsrf($_POST['csrf'] ?? '');
         $bandContactId = (int)($_POST['band_contact_id'] ?? 0);
@@ -741,7 +803,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
         <form method="post" enctype="multipart/form-data" id="contractForm">
             <input type="hidden" name="csrf" value="<?= csrfToken() ?>">
             <input type="hidden" name="save_contract" value="1">
-            <input type="hidden" name="locker_id" id="contract_locker_id" value="<?= h($row['locker_id'] ?? '') ?>">
+            <input type="hidden" name="locker_id" id="contract_locker_id" value="<?= h((string)($row['locker_id'] ?? '')) ?>">
 
             <div class="row">
                 <div class="field">
@@ -777,12 +839,12 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
             <div class="row">
                 <div class="field">
                     <label>Contactpersoon (ondertekenaar)</label>
-                    <select name="band_contact_id" id="band_contact_id" required><option value="">-- Kies contactpersoon --</option></select>
+                    <select name="band_contact_id" id="band_contact_id" required <?= $canWriteContract ? '' : 'disabled' ?>><option value="">-- Kies contactpersoon --</option></select>
                     <div class="small">Wie tekent namens de gebruiker</div>
                 </div>
                 <div class="field">
                     <label>Bestuurslid</label>
-                    <select name="board_member_id" id="board_member_id" required>
+                    <select name="board_member_id" id="board_member_id" required <?= $canWriteContract ? '' : 'disabled' ?>>
                         <option value="">-- Kies bestuurslid --</option>
                         <?php foreach ($boardMembers as $m): ?>
                             <option value="<?= $m['id'] ?>" <?= ($defaultBoardMemberId == $m['id']) ? 'selected' : '' ?>>
@@ -795,20 +857,24 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
             </div>
 
             <div class="row">
-                <div class="field"><label>Ingangsdatum</label><input type="date" name="start_date" value="<?= h($contractStartDate) ?>" required></div>
+                <div class="field"><label>Ingangsdatum</label><input type="date" name="start_date" value="<?= h($contractStartDate) ?>" required <?= $canWriteContract ? '' : 'disabled' ?>></div>
             </div>
+            <?php if ($canWriteContract): ?>
             <div class="field">
                 <label>Getekend contract (PDF of foto) uploaden</label>
                 <input type="file" name="signed_pdf" accept="application/pdf,image/*">
                 <div class="small">Wordt opgeslagen bij de documenten hieronder.</div>
             </div>
+            <?php endif; ?>
             <div class="button-group">
                 <button type="button" class="btn btn-warning" onclick="generateContractPDF()">📄 PDF Preview</button>
                 <?php if ($existingContract): ?>
                     <a class="btn btn-info" href="/admin/contract_print.php?contract_id=<?= (int)$existingContract['id'] ?>" target="_blank">🖨️ Print + QR</a>
                     <button type="button" class="btn btn-primary" onclick="showQr(<?= (int)$existingContract['id'] ?>)">📱 Upload-QR</button>
                 <?php endif; ?>
-                <button type="submit" class="btn btn-success">💾 Contract opslaan</button>
+                <?php if ($canWriteContract): ?>
+                    <button type="submit" class="btn btn-success">💾 Contract opslaan</button>
+                <?php endif; ?>
             </div>
         </form>
     </div>
@@ -855,6 +921,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
                     <td class="small"><?= h(date('d-m-Y H:i', strtotime((string)$dr['uploaded_at']))) ?></td>
                     <td>
                         <a class="btn btn-info btn-sm" href="/admin/contract_edit.php?action=serve_document&doc=<?= (int)$dr['id'] ?>" target="_blank">👁</a>
+                        <?php if ($canWriteContract): ?>
                         <form class="inline-form" method="post" onsubmit="return confirm('Dit document definitief verwijderen?');">
                             <input type="hidden" name="csrf" value="<?= csrfToken() ?>">
                             <input type="hidden" name="form_action" value="delete_document">
@@ -862,6 +929,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
                             <input type="hidden" name="return_id" value="<?= $id ?>">
                             <button type="submit" class="btn btn-danger btn-sm">🗑</button>
                         </form>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -871,6 +939,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
         <?php endif; ?>
 
         <hr class="sep">
+        <?php if ($canWriteContract): ?>
         <h3>Document toevoegen</h3>
         <?php if ($existingContract): ?>
             <form method="post" enctype="multipart/form-data">
@@ -884,6 +953,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
             </form>
         <?php else: ?>
             <p class="small">Sla eerst het contract op voordat je losse documenten toevoegt.</p>
+        <?php endif; ?>
         <?php endif; ?>
     </div>
 </div>

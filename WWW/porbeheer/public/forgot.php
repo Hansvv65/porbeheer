@@ -21,32 +21,6 @@ function makeToken(int $bytes = 32): string {
     return rtrim(strtr(base64_encode(random_bytes($bytes)), '+/', '-_'), '=');
 }
 
-function mailLayout(string $title, string $intro, string $contentHtml): string {
-    return '
-    <div style="margin:0;padding:24px;background:#f4f7fb;font-family:Arial,sans-serif;color:#243447;">
-      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);">
-        
-        <div style="padding:18px 24px;background:linear-gradient(180deg,#eef6ff,#e6f0fb);border-bottom:1px solid #d9e2ec;">
-          <div style="font-size:22px;font-weight:700;color:#1f3b57;">Porbeheer</div>
-          <div style="margin-top:4px;font-size:13px;color:#5b7083;">POP Oefenruimte Zevenaar</div>
-        </div>
-
-        <div style="padding:28px 24px;">
-          <h2 style="margin:0 0 12px 0;font-size:22px;color:#1f3b57;">' . h($title) . '</h2>
-          <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#425466;">' . h($intro) . '</p>
-
-          <div style="font-size:15px;line-height:1.7;color:#243447;">
-            ' . $contentHtml . '
-          </div>
-        </div>
-
-        <div style="padding:16px 24px;background:#f8fbff;border-top:1px solid #d9e2ec;font-size:12px;color:#6b7c93;">
-          Dit is een automatisch bericht van Porbeheer.
-        </div>
-      </div>
-    </div>';
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf($_POST['csrf'] ?? null);
 

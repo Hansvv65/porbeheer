@@ -5,59 +5,10 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 requireSectionAccess('sleutels', 'write');
 
-// ---------- AJAX ENDPOINTS (blijven gelijk) ----------
+// ---------- AJAX ENDPOINTS ----------
 if (isset($_GET['action'])) {
     header('Content-Type: application/json');
     try {
-        if ($_GET['action'] === 'get_lockers_for_band') {
-            $bandId = (int)($_GET['band_id'] ?? 0);
-            if ($bandId <= 0) { echo json_encode([]); exit; }
-            $stmt = $pdo->prepare("SELECT id, locker_no FROM lockers WHERE band_id = ? AND deleted_at IS NULL ORDER BY locker_no");
-            $stmt->execute([$bandId]);
-            echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
-            exit;
-        }
-        if ($_GET['action'] === 'get_band_contacts') {
-            $lockerId = (int)($_GET['locker_id'] ?? 0);
-            $response = ['band_id' => null, 'band_name' => null, 'contacts' => []];
-            if ($lockerId > 0) {
-                $stmt = $pdo->prepare("
-                    SELECT l.band_id, b.name as band_name,
-                           b.primary_contact_id, b.secondary_contact_id,
-                           c1.id as c1_id, c1.name as c1_name, c1.email as c1_email,
-                           c2.id as c2_id, c2.name as c2_name, c2.email as c2_email
-                    FROM lockers l
-                    LEFT JOIN bands b ON b.id = l.band_id AND b.deleted_at IS NULL
-                    LEFT JOIN contacts c1 ON c1.id = b.primary_contact_id AND c1.deleted_at IS NULL
-                    LEFT JOIN contacts c2 ON c2.id = b.secondary_contact_id AND c2.deleted_at IS NULL
-                    WHERE l.id = ? AND l.deleted_at IS NULL
-                ");
-                $stmt->execute([$lockerId]);
-                $data = $stmt->fetch(PDO::FETCH_ASSOC);
-                if ($data && $data['band_id']) {
-                    $response['band_id'] = (int)$data['band_id'];
-                    $response['band_name'] = $data['band_name'] ?? '';
-                    if ($data['primary_contact_id']) {
-                        $response['contacts'][] = [
-                            'id' => (int)$data['primary_contact_id'],
-                            'name' => $data['c1_name'],
-                            'email' => $data['c1_email'],
-                            'role' => 'Primair contact'
-                        ];
-                    }
-                    if ($data['secondary_contact_id']) {
-                        $response['contacts'][] = [
-                            'id' => (int)$data['secondary_contact_id'],
-                            'name' => $data['c2_name'],
-                            'email' => $data['c2_email'],
-                            'role' => 'Secondair contact'
-                        ];
-                    }
-                }
-            }
-            echo json_encode($response);
-            exit;
-        }
         if ($_GET['action'] === 'get_all_contacts') {
             $stmt = $pdo->query("SELECT id, name, email FROM contacts WHERE deleted_at IS NULL ORDER BY name");
             echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -114,7 +65,6 @@ if ($isEdit) {
     }
 }
 
-$allBands = $pdo->query("SELECT id, name FROM bands WHERE deleted_at IS NULL ORDER BY name")->fetchAll();
 $lockers = $pdo->query("SELECT l.id, l.locker_no, l.band_id, b.name AS band_name FROM lockers l LEFT JOIN bands b ON b.id = l.band_id AND b.deleted_at IS NULL WHERE l.deleted_at IS NULL ORDER BY l.locker_no")->fetchAll();
 
 $currentLocker = null; $currentBandId = null; $currentBandName = null; $currentLockerNo = null;
@@ -122,6 +72,24 @@ if ($row['locker_id']) {
     foreach ($lockers as $l) if ($l['id'] == $row['locker_id']) {
         $currentLocker = $l; $currentBandId = $l['band_id']; $currentBandName = $l['band_name']; $currentLockerNo = $l['locker_no']; break;
     }
+}
+
+// Contactpersonen van de huidige band (voor uitgifte) -- rechtstreeks op de
+// server bepaald, geen los te kiezen band meer: die staat al vast via de
+// kast van deze sleutel. Zelfde bron als elders (band_contacts + primair/
+// secundair contact).
+$currentBandContacts = [];
+if ($currentBandId) {
+    $cbc = $pdo->prepare("
+        SELECT DISTINCT c.id, c.name, c.email
+        FROM contacts c
+        LEFT JOIN band_contacts bc ON bc.contact_id = c.id
+        LEFT JOIN bands b ON b.id = ? AND (b.primary_contact_id = c.id OR b.secondary_contact_id = c.id)
+        WHERE c.deleted_at IS NULL AND (bc.band_id = ? OR b.id IS NOT NULL)
+        ORDER BY c.name
+    ");
+    $cbc->execute([$currentBandId, $currentBandId]);
+    $currentBandContacts = $cbc->fetchAll(PDO::FETCH_ASSOC);
 }
 
 // Status tekst voor read-only paneel
@@ -269,7 +237,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
         <form method="post" id="keyForm">
             <input type="hidden" name="csrf" value="<?= h(csrfToken()) ?>">
             <input type="hidden" name="save_key" value="1">
-            <input type="hidden" name="locker_id" id="locker_id" value="<?= h($row['locker_id'] ?? '') ?>">
+            <input type="hidden" name="locker_id" id="locker_id" value="<?= h((string)($row['locker_id'] ?? '')) ?>">
 
             <div class="row">
                 <div class="field"><label>Sleutelnummer</label><div class="readonly-text"><?= h($row['key_code']) ?></div></div>
@@ -301,23 +269,39 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
             <form method="post"><input type="hidden" name="csrf" value="<?= csrfToken() ?>"><input type="hidden" name="return_key" value="1"><button type="submit" class="btn btn-warning">↩️ Retour</button></form>
         <?php else: ?>
             <p>De sleutel is momenteel <strong>in voorraad</strong> en kan worden uitgegeven.</p>
+            <?php if ($currentBandId): ?>
+                <div class="msg info">
+                    💡 Deze sleutel hoort bij kast <strong><?= h((string)$currentLockerNo) ?></strong> van band <strong><?= h((string)$currentBandName) ?></strong>.
+                    Voor uitgifte aan een bandlid is <a href="/admin/band_keys.php?band_id=<?= (int)$currentBandId ?>">het sleutelbeheer van die band</a> de aanbevolen route
+                    (daar staan de contactpersonen van de band al klaar). Onderstaand formulier werkt ook, maar is bedoeld voor uitzonderingen.
+                </div>
+            <?php elseif ($currentLockerNo): ?>
+                <div class="msg err">
+                    ⚠️ Kast <strong><?= h((string)$currentLockerNo) ?></strong> is nog niet aan een band gekoppeld. Ga naar de betreffende band → Sleutelbeheer
+                    om eerst een band aan deze kast te koppelen — dan verschijnen ook de juiste contactpersonen automatisch.
+                    Wil je deze sleutel toch nu al uitgeven (bijv. aan iemand buiten een band)? Gebruik dan hieronder "Uitgeven aan algemeen contact".
+                </div>
+            <?php endif; ?>
             <form method="post" id="issueForm">
                 <input type="hidden" name="csrf" value="<?= csrfToken() ?>"><input type="hidden" name="issue_key" value="1">
                 <div class="recipient-type">
-                    <label><input type="radio" name="recipient_type" value="band" checked> Uitgeven aan bandlid</label>
-                    <label><input type="radio" name="recipient_type" value="general"> Uitgeven aan algemeen contact</label>
+                    <label><input type="radio" name="recipient_type" value="band" <?= $currentBandId ? 'checked' : 'disabled' ?>> Uitgeven aan bandlid<?= $currentBandId ? '' : ' (geen band gekoppeld aan deze kast)' ?></label>
+                    <label><input type="radio" name="recipient_type" value="general" <?= $currentBandId ? '' : 'checked' ?>> Uitgeven aan algemeen contact</label>
                 </div>
-                <div class="field" id="bandField">
+                <div class="field" id="bandField" style="<?= $currentBandId ? '' : 'display:none;' ?>">
                     <label>Band</label>
-                    <select name="band_id" id="issue_band_id">
-                        <option value="">-- Kies een band --</option>
-                        <?php foreach ($allBands as $b): ?><option value="<?= $b['id'] ?>"><?= h($b['name']) ?></option><?php endforeach; ?>
-                    </select>
+                    <input type="text" value="<?= h((string)$currentBandName) ?>" readonly>
+                    <input type="hidden" name="band_id" id="issue_band_id" value="<?= h((string)($currentBandId ?? '')) ?>">
                 </div>
                 <div class="field">
                     <label>Contactpersoon</label>
-                    <select name="contact_id" id="contact_select" required><option value="">-- Selecteer een contact --</option></select>
-                    <div class="small" id="contactHint"></div>
+                    <select name="contact_id" id="contact_select" required>
+                        <option value="">-- Kies contactpersoon --</option>
+                        <?php foreach ($currentBandContacts as $c): ?>
+                            <option value="<?= (int)$c['id'] ?>"><?= h((string)$c['name']) ?><?= $c['email'] ? ' - ' . h((string)$c['email']) : '' ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="small" id="contactHint"><?= $currentBandId ? 'Selecteer de ontvanger' : '' ?></div>
                 </div>
                 <div class="button-group"><button type="submit" class="btn btn-success">📤 Uitgeven</button></div>
             </form>
@@ -331,8 +315,12 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:15px 0;}
 let allContacts = [];
 fetch('/admin/keys_edit.php?action=get_all_contacts').then(r=>r.json()).then(d=>{allContacts=d;}).catch(console.error);
 
+// Contactpersonen van de huidige band: al server-side gerenderd in de
+// select bij het laden van de pagina (zie PHP hierboven), hier bewaard
+// zodat we na het wisselen naar "algemeen contact" weer kunnen terugzetten.
+const bandContacts = <?= json_encode($currentBandContacts, JSON_UNESCAPED_UNICODE) ?>;
+
 const bandField = document.getElementById('bandField');
-const issueBandSelect = document.getElementById('issue_band_id');
 const contactSelect = document.getElementById('contact_select');
 const contactHint = document.getElementById('contactHint');
 const recipientRadios = document.querySelectorAll('input[name="recipient_type"]');
@@ -349,52 +337,30 @@ function fillGeneralContacts() {
     contactHint.textContent = 'Selecteer een algemeen contact';
 }
 
+function fillBandContacts() {
+    contactSelect.innerHTML = '<option value="">-- Kies contactpersoon --</option>';
+    bandContacts.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = `${c.name}${c.email ? ' - ' + c.email : ''}`;
+        contactSelect.appendChild(opt);
+    });
+    contactSelect.disabled = false;
+    contactHint.textContent = 'Selecteer de ontvanger';
+}
+
 function updateIssueDropdown() {
     const type = document.querySelector('input[name="recipient_type"]:checked').value;
     if (type === 'band') {
         bandField.style.display = 'block';
-        issueBandSelect.required = true;
-        contactHint.textContent = 'Kies eerst een band';
-        contactSelect.innerHTML = '<option value="">-- Selecteer eerst een band --</option>';
-        contactSelect.disabled = true;
+        fillBandContacts();
     } else {
         bandField.style.display = 'none';
-        issueBandSelect.required = false;
         if (allContacts.length) fillGeneralContacts();
         else { contactSelect.innerHTML = '<option value="">Laden...</option>'; }
     }
 }
 recipientRadios.forEach(r => r.addEventListener('change', updateIssueDropdown));
-
-issueBandSelect.addEventListener('change', async function() {
-    if (document.querySelector('input[name="recipient_type"]:checked').value !== 'band') return;
-    const bandId = this.value;
-    if (!bandId) {
-        contactSelect.innerHTML = '<option value="">-- Selecteer eerst een band --</option>';
-        contactSelect.disabled = true;
-        return;
-    }
-    try {
-        const resp = await fetch(`/admin/keys_edit.php?action=get_lockers_for_band&band_id=${bandId}`);
-        const lockers = await resp.json();
-        if (lockers.length === 0) {
-            contactSelect.innerHTML = '<option value="">-- Geen kast --</option>';
-            contactSelect.disabled = true;
-            return;
-        }
-        const resp2 = await fetch(`/admin/keys_edit.php?action=get_band_contacts&locker_id=${lockers[0].id}`);
-        const data = await resp2.json();
-        contactSelect.innerHTML = '<option value="">-- Kies contactpersoon --</option>';
-        data.contacts.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.id;
-            opt.textContent = `${c.name} [${c.role}]${c.email ? ' - ' + c.email : ''}`;
-            contactSelect.appendChild(opt);
-        });
-        contactSelect.disabled = false;
-        contactHint.textContent = 'Selecteer de ontvanger';
-    } catch (err) { console.error(err); }
-});
 
 // Init uitgifte
 document.addEventListener('DOMContentLoaded', () => {

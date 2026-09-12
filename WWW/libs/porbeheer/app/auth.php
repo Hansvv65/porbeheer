@@ -272,10 +272,10 @@ function hasOwnOnlySectionAccess(PDO $pdo, string $section): bool
 {
     $access = getSectionAccess($pdo);
     $entry = $access[$section] ?? null;
-    if ($entry === null || $entry['level'] !== 'write') {
+    if ($entry === null) {
         return false;
     }
-    return $entry['own_only'];
+    return (bool)$entry['own_only'];
 }
 
 /**
@@ -311,6 +311,17 @@ function renderNoAccessPage(?string $section = null): void
     ];
     $sectionLabel = $section !== null ? ($labels[$section] ?? $section) : null;
 
+    $sectionHomes = [
+        'bands'     => '/admin/bands.php',
+        'planning'  => '/admin/planning.php',
+        'sleutels'  => '/admin/keys.php',
+        'financien' => '/admin/finance.php',
+        'contacten' => '/admin/contacts.php',
+        'admin'     => '/admin/beheer.php',
+    ];
+    $backUrl = ($section !== null && isset($sectionHomes[$section])) ? $sectionHomes[$section] : '/admin/dashboard.php';
+    $backLabel = ($section !== null && isset($sectionHomes[$section])) ? 'Terug naar ' . $sectionLabel : 'Terug naar dashboard';
+
     header('Content-Type: text/html; charset=UTF-8');
     ?>
 <!DOCTYPE html>
@@ -345,7 +356,7 @@ function renderNoAccessPage(?string $section = null): void
       Je hebt niet de juiste rechten voor deze pagina.
     <?php endif; ?>
       Neem contact op met een beheerder als je denkt dat dit niet klopt.</p>
-    <a class="btn" href="/admin/dashboard.php">Terug naar dashboard</a>
+    <a class="btn" href="<?= htmlspecialchars($backUrl, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($backLabel, ENT_QUOTES, 'UTF-8') ?></a>
   </div>
 </div>
 </body>
@@ -421,8 +432,14 @@ function requireCsrf(?string $token): void
         && hash_equals((string)$_SESSION['csrf'], $token);
 
     if (!$ok) {
-        http_response_code(400);
-        exit('CSRF fout.');
+        // Meestal is dit geen aanval maar een verlopen sessie (het formulier
+        // stond te lang open, zie startSecureSession()'s idle-timeout) --
+        // stuur terug naar dezelfde pagina met een vlag, zodat die een
+        // vriendelijke melding kan tonen i.p.v. een kale foutpagina.
+        $path = (string)parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
+        if ($path === '') $path = '/';
+        header('Location: ' . $path . '?csrf_expired=1');
+        exit;
     }
 }
 
@@ -463,6 +480,23 @@ function enforce2faSetupIfNeeded(): void
         header('Location: /admin/setup-2fa.php');
         exit;
     }
+}
+
+/**
+ * Houdt de oude 'active' kolom gelijk aan 'status' (en deleted_at). Gebruikt
+ * door zowel users_detail.php als quick_approve.php -- centraal gehouden om
+ * niet weer twee losse kopieën te krijgen die uit de pas kunnen lopen.
+ */
+function syncActiveWithStatus(PDO $pdo, int $id): void {
+    $pdo->prepare("
+        UPDATE users
+        SET active = CASE
+            WHEN deleted_at IS NOT NULL THEN 0
+            WHEN status = 'ACTIVE' THEN 1
+            ELSE 0
+        END
+        WHERE id = ?
+    ")->execute([$id]);
 }
 
 function requireLogin(): void
@@ -566,7 +600,7 @@ function themeImage(string $baseName, PDO $pdo): string
 function refreshSessionUser(PDO $pdo, int $userId): void
 {
     $st = $pdo->prepare("
-        SELECT id, username, role, contact_id, is_bestuurslid, theme_variant, totp_enabled
+        SELECT id, username, first_name, role, contact_id, is_bestuurslid, theme_variant, totp_enabled
         FROM users
         WHERE id = ?
         LIMIT 1
@@ -587,6 +621,7 @@ function refreshSessionUser(PDO $pdo, int $userId): void
         $_SESSION['user'] = [
             'id'             => (int)$u['id'],
             'username'       => (string)$u['username'],
+            'first_name'     => (string)($u['first_name'] ?? ''),
             'role'           => (string)($u['role'] ?? 'GEBRUIKER'),
             'all_roles'      => $allRoles,
             'contact_id'     => isset($u['contact_id']) && $u['contact_id'] !== null ? (int)$u['contact_id'] : null,
@@ -648,6 +683,7 @@ function completeLoginSession(PDO $pdo, array $u, bool $mustSetup2fa): void
     $_SESSION['user'] = [
         'id'             => $uid,
         'username'       => (string)$u['username'],
+        'first_name'     => (string)($u['first_name'] ?? ''),
         'role'           => (string)($u['role'] ?? 'GEBRUIKER'),
         'all_roles'      => $allRoles,
         'contact_id'     => isset($u['contact_id']) && $u['contact_id'] !== null ? (int)$u['contact_id'] : null,

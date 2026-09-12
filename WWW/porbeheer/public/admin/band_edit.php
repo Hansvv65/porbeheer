@@ -65,13 +65,15 @@ $contacts = $pdo->query("
  * Vaste lockerset uit database ophalen.
  * Er worden GEEN nieuwe lockers aangemaakt vanuit deze pagina.
  */
-$lockerRows = $pdo->query("
+$lockerRows = $pdo->prepare("
     SELECT locker_no
     FROM lockers
-    WHERE deleted_at IS NULL
+    WHERE deleted_at IS NULL AND (band_id IS NULL OR band_id = ?)
     GROUP BY locker_no
     ORDER BY locker_no
-")->fetchAll(PDO::FETCH_ASSOC);
+");
+$lockerRows->execute([$id]);
+$lockerRows = $lockerRows->fetchAll(PDO::FETCH_ASSOC);
 
 $validLockerNos = array_map(
     static fn(array $r): string => (string)$r['locker_no'],

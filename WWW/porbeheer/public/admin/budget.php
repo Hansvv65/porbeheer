@@ -119,7 +119,7 @@ $rows[] = $subscriptionBudgetItem;
             <td>€ <?= number_format((float)$r['annual_amount'], 2, ',', '.') ?></td>
             <td><?= ((int)$r['is_active']===1 ? 'actief' : 'inactief') ?></td>
             <td>
-              <?php if ($r['id'] !== 0): ?>
+              <?php if ($r['id'] !== 0 && hasSectionAccess($pdo, 'financien', 'write')): ?>
                 <a class="btn" href="/admin/budget_edit.php?id=<?= (int)$r['id'] ?>">Bewerken</a>
               <?php endif; ?>
             </td>
