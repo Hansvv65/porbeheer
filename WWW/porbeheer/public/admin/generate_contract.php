@@ -6,7 +6,7 @@ require_once '/var/www/libs/porbeheer/app/bootstrap.php';
 require_once '/var/www/libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN', 'BEHEER']);
+requireSectionAccess('sleutels', 'write');
 
 // Dompdf fix
 $cpdfPath = __DIR__ . '/../../../libs/porbeheer/vendor/DomPDF/lib/Cpdf.php';

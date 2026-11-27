@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN']);
+requireSectionAccess('admin', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -13,16 +13,21 @@ $bg = themeImage('admin', $pdo);
 
 
 $tiles = [
-  ['title'=>'Gebruikers',       'href'=>'/admin/users.php',          'roles'=>['ADMIN']],
-  ['title'=>'Configuratie',     'href'=>'/admin/settings.php',       'roles'=>['ADMIN']],
-  ['title'=>'Audit logging',    'href'=>'/admin/audit_logging.php',  'roles'=>['ADMIN']],
-  ['title'=>'Database schema',  'href'=>'/admin/db_schema.php',      'roles'=>['ADMIN']],
-  ['title'=>'Uitloggen',        'href'=>'/logout.php',               'roles'=>['ADMIN']],
-  ['title'=>'Changelog',        'href'=>'/admin/changelog.php',      'roles'=>['ADMIN']],
+  ['title'=>'Gebruikers',       'href'=>'/admin/users.php',          'section'=>'admin'],
+  ['title'=>'Rechtenmatrix',    'href'=>'/admin/rechtenmatrix.php',  'section'=>'admin'],
+  ['title'=>'Kasten & Sleutels','href'=>'/admin/lockers_keys.php',   'section'=>'admin'],
+  ['title'=>'Configuratie',     'href'=>'/admin/settings.php',       'section'=>'admin'],
+  ['title'=>'Audit logging',    'href'=>'/admin/audit_logging.php',  'section'=>'admin'],
+  ['title'=>'Database schema',  'href'=>'/admin/db_schema.php',      'section'=>'admin'],
+  ['title'=>'Uitloggen',        'href'=>'/logout.php',               'section'=>null],
+  ['title'=>'Changelog',        'href'=>'/admin/changelog.php',      'section'=>'admin'],
 ];
 
-function allowedTile(array $tile, string $role): bool {
-  return in_array($role, $tile['roles'], true);
+function allowedTile(PDO $pdo, array $tile): bool {
+  if ($tile['section'] === null) {
+    return true;
+  }
+  return hasSectionAccess($pdo, $tile['section'], 'read');
 }
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
@@ -33,87 +38,21 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Porbeheer - Beheer</title>
-  <style>
-    :root{
-      --text: #fff;
-      --muted: rgba(255,255,255,.78);
-      --border: rgba(255,255,255,.22);
-      --glass: rgba(255,255,255,.12);
-      --glass2: rgba(255,255,255,.06);
-      --shadow: 0 14px 40px rgba(0,0,0,.45);
-    }
-
-    body{
-      margin:0;
-      font-family: Arial, sans-serif;
-      color: var(--text);
-      background:url('<?= h($bg) ?>') no-repeat center center fixed;  background-size:cover;
-      background-size: cover;
-    }
-
-    .backdrop{
-      min-height: 100vh;
-      background:
-        radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-        linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-      padding: 26px;
-      box-sizing: border-box;
-      display:flex;
-      justify-content:center;
-    }
-
-    .wrap{ width: min(1200px, 96vw); }
-
-    .topbar{
-      display:flex;
-      align-items:flex-end;
-      justify-content:space-between;
-      gap:16px;
-      flex-wrap:wrap;
-      margin-bottom: 14px;
-    }
-
-    .brand h1{ margin:0; font-size: 28px; letter-spacing: .5px; }
-    .brand .sub{ margin-top:6px; color: var(--muted); font-size: 14px; }
-
-    .userbox{
-      background: var(--glass);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px 14px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      min-width: 260px;
-    }
-    .userbox .line1{font-weight:bold}
-    .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
-
-    .panel{
-      margin-top: 10px;
-      border-radius: 20px;
-      border: 1px solid rgba(255,255,255,.18);
-      background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      padding: 18px;
-    }
-
-    .grid{
+  <link rel="stylesheet" href="/assets/css/main.css">
+<style>
+.grid{
       display:grid;
       grid-template-columns: repeat(4, minmax(160px, 1fr));
       gap: 14px;
     }
-    @media (max-width: 960px){
+@media (max-width: 960px){
       .grid{grid-template-columns: repeat(2, minmax(160px, 1fr));}
       .userbox{min-width: unset; width: 100%;}
     }
-    @media (max-width: 520px){
+@media (max-width: 520px){
       .grid{grid-template-columns: 1fr;}
     }
-
-    .tile{
+.tile{
       position: relative;
       border-radius: 16px;
       border: 1px solid rgba(255,255,255,.22);
@@ -137,17 +76,17 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
       text-align:center;
       padding: 10px 12px;
     }
-    .tile:hover{
+.tile:hover{
       transform: translateY(-2px);
       border-color: rgba(255,255,255,.38);
       background: linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,.08));
     }
-    .tile.disabled{
+.tile.disabled{
       opacity:.45;
       pointer-events:none;
       filter: grayscale(35%);
     }
-    .tile::before{
+.tile::before{
       content:"";
       position:absolute;
       inset:-40%;
@@ -171,19 +110,14 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
     }
 
     }
- 
-  a{color:#fff;text-decoration:none;transition:color .15s ease}
-  a:hover{color:#ffd9b3}
-  a:visited{color:#ffe0c2}
-
-  </style>
+</style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
   <div class="backdrop">
     <div class="wrap">
       <div class="topbar">
         <div class="brand">
-          <h1>Porbeheer</h1>
+          <h1><a href="/admin/dashboard.php">Porbeheer</a></h1>
           <div class="sub">POP Oefenruimte Zevenaar • beheer & planning</div>
         </div>
 
@@ -197,11 +131,12 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/beheer.php');
         <div class="grid">
           <?php foreach ($tiles as $t): ?>
             <?php
-              $ok = allowedTile($t, $role);
+              $ok = allowedTile($pdo, $t);
               $cls = $ok ? 'tile' : 'tile disabled';
+              $tip = $ok ? '' : ' title="Je hebt hier geen toegang toe"';
               $href = $ok ? $t['href'] : '#';
             ?>
-            <a class="<?= $cls ?>" href="<?= h($href) ?>">
+            <a class="<?= $cls ?>" href="<?= h($href) ?>"<?= $tip ?>>
               <?= h($t['title']) ?>
             </a>
           <?php endforeach; ?>

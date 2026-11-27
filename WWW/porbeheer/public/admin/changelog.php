@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('admin', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -98,6 +98,7 @@ $canAssignToVersionId = function (?int $versionId) use ($versionsById, $appVersi
 
 /* nieuwe toekomstige versie toevoegen */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_version'])) {
+    requireSectionAccess('admin', 'write');
     requireCsrf($_POST['csrf'] ?? '');
 
     $version = trim((string)($_POST['version'] ?? ''));
@@ -146,6 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_version'])) {
 
 /* nieuw item toevoegen */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_item'])) {
+    requireSectionAccess('admin', 'write');
     requireCsrf($_POST['csrf'] ?? '');
 
     $versionIdRaw = trim((string)($_POST['version_id'] ?? ''));
@@ -199,6 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['new_item'])) {
 
 /* bestaand item aanpassen */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_item'])) {
+    requireSectionAccess('admin', 'write');
     requireCsrf($_POST['csrf'] ?? '');
 
     $itemId       = (int)($_POST['item_id'] ?? 0);
@@ -355,33 +358,18 @@ $releasedVersions = array_values(array_filter(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Porbeheer - Changelog beheer</title>
-  <style>
-    :root{
-      --text: #fff;
-      --muted: rgba(255,255,255,.78);
-      --border: rgba(255,255,255,.22);
-      --glass: rgba(255,255,255,.12);
-      --glass2: rgba(255,255,255,.06);
-      --shadow: 0 14px 40px rgba(0,0,0,.45);
-      --ok: rgba(70, 190, 120, .22);
-      --okb: rgba(120, 255, 170, .32);
-      --err: rgba(210, 80, 80, .22);
-      --errb: rgba(255, 140, 140, .30);
-      --warn: rgba(225, 180, 70, .18);
-      --warnb: rgba(255, 210, 120, .34);
-    }
-
-    *{box-sizing:border-box}
-
-    body{
-      margin:0;
-      font-family: Arial, sans-serif;
-      color: var(--text);
-      background:url('<?= h($bg) ?>') no-repeat center center fixed;
-      background-size:cover;
-    }
-
-    .backdrop{
+  <link rel="stylesheet" href="/assets/css/main.css">
+<style>
+:root{
+  --err: rgba(210, 80, 80, .22);
+  --errb: rgba(255, 140, 140, .30);
+  --ok: rgba(70, 190, 120, .22);
+  --okb: rgba(120, 255, 170, .32);
+  --warn: rgba(225, 180, 70, .18);
+  --warnb: rgba(255, 210, 120, .34);
+}
+*{box-sizing:border-box}
+.backdrop{
       min-height: 100vh;
       background:
         radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
@@ -390,35 +378,8 @@ $releasedVersions = array_values(array_filter(
       display:flex;
       justify-content:center;
     }
-
-    .wrap{ width: min(1380px, 96vw); }
-
-    .topbar{
-      display:flex;
-      align-items:flex-end;
-      justify-content:space-between;
-      gap:16px;
-      flex-wrap:wrap;
-      margin-bottom: 14px;
-    }
-
-    .brand h1{ margin:0; font-size: 28px; letter-spacing: .5px; }
-    .brand .sub{ margin-top:6px; color: var(--muted); font-size: 14px; }
-
-    .userbox{
-      background: var(--glass);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px 14px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      min-width: 260px;
-    }
-    .userbox .line1{font-weight:bold}
-    .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
-
-    .panel{
+.wrap{ width: min(1380px, 96vw); }
+.panel{
       border-radius: 20px;
       border: 1px solid rgba(255,255,255,.18);
       background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
@@ -427,12 +388,8 @@ $releasedVersions = array_values(array_filter(
       -webkit-backdrop-filter: blur(12px);
       padding: 18px;
     }
-
-    a{color:#fff;text-decoration:none}
-    a:hover{color:#ffd9b3}
-    a:visited{color:#ffe0c2}
-
-    .pagehead{
+a{color:#fff;text-decoration:none}
+.pagehead{
       display:flex;
       justify-content:space-between;
       align-items:flex-end;
@@ -440,17 +397,16 @@ $releasedVersions = array_values(array_filter(
       flex-wrap:wrap;
       margin-bottom: 12px;
     }
-    .pagehead h2{margin:0;font-size:20px}
-    .pagehead .hint{color:var(--muted);font-size:13px;margin-top:6px}
-
-    .kbar{
+.pagehead h2{margin:0;font-size:20px}
+.pagehead .hint{color:var(--muted);font-size:13px;margin-top:6px}
+.kbar{
       display:flex;
       gap:10px;
       flex-wrap:wrap;
       margin-top: 12px;
       margin-bottom: 14px;
     }
-    .kbtn{
+.kbtn{
       display:inline-block;
       padding: 10px 12px;
       border-radius: 14px;
@@ -459,8 +415,7 @@ $releasedVersions = array_values(array_filter(
       box-shadow: 0 10px 22px rgba(0,0,0,.28);
       font-weight: 800;
     }
-
-    .success,.errorbox,.notice,.warning{
+.success,.errorbox,.notice,.warning{
       margin-bottom: 14px;
       padding: 12px 14px;
       border-radius: 16px;
@@ -468,46 +423,39 @@ $releasedVersions = array_values(array_filter(
       font-size: 13px;
       line-height: 1.45;
     }
-    .success{background: var(--ok); border-color: var(--okb); color:#f4fff7;}
-    .errorbox{background: var(--err); border-color: var(--errb); color:#fff3f3;}
-    .warning{background: var(--warn); border-color: var(--warnb); color:#fff8ec;}
-    .notice{background: rgba(255,255,255,.06); color: var(--muted);}
-    .errorbox ul{margin:0;padding-left:18px}
-
-    .hero{
+.success{background: var(--ok); border-color: var(--okb); color:#f4fff7;}
+.errorbox{background: var(--err); border-color: var(--errb); color:#fff3f3;}
+.warning{background: var(--warn); border-color: var(--warnb); color:#fff8ec;}
+.notice{background: rgba(255,255,255,.06); color: var(--muted);}
+.errorbox ul{margin:0;padding-left:18px}
+.hero{
       display:grid;
       grid-template-columns: 1.1fr .9fr;
       gap:16px;
       margin-bottom:16px;
     }
-
-    .grid{
+.grid{
       display:grid;
       grid-template-columns: 420px 1fr;
       gap:16px;
       align-items:start;
     }
-
-    @media (max-width: 1100px){
+@media (max-width: 1100px){
       .hero,.grid{grid-template-columns:1fr}
       .userbox{min-width: unset; width: 100%;}
     }
-
-    .card{
+.card{
       border-radius: 16px;
       border: 1px solid rgba(255,255,255,.22);
       background: linear-gradient(180deg, var(--glass), var(--glass2));
       box-shadow: 0 10px 22px rgba(0,0,0,.30);
       padding: 14px;
     }
-
-    .sectiontitle{margin:0 0 10px 0;font-size:17px}
-    .subtle{color:var(--muted);font-size:13px}
-
-    .formrow{margin-bottom:12px}
-    .label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
-
-    input[type="text"],
+.sectiontitle{margin:0 0 10px 0;font-size:17px}
+.subtle{color:var(--muted);font-size:13px}
+.formrow{margin-bottom:12px}
+.label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+input[type="text"],
     input[type="date"],
     select,
     textarea{
@@ -520,11 +468,9 @@ $releasedVersions = array_values(array_filter(
       outline:none;
       font: inherit;
     }
-
-    textarea{min-height:110px;resize:vertical}
-    select option{color:#111;background:#fff}
-
-    .btn{
+textarea{min-height:110px;resize:vertical}
+select option{color:#111;background:#fff}
+.btn{
       display:inline-block;
       padding: 10px 12px;
       border-radius: 14px;
@@ -535,37 +481,33 @@ $releasedVersions = array_values(array_filter(
       color:#fff;
       cursor:pointer;
     }
-
-    .versionhero{
+.versionhero{
       padding:16px;
       border-radius:18px;
       border:1px solid rgba(255,255,255,.20);
       background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.07));
       box-shadow: 0 10px 24px rgba(0,0,0,.28);
     }
-    .vlabel{color:var(--muted);font-size:13px;margin-bottom:6px}
-    .vnumber{font-size:30px;font-weight:800;margin:0 0 8px 0}
-    .vmeta{color:var(--muted);font-size:13px;margin-bottom:10px}
-
-    .quickstats{
+.vlabel{color:var(--muted);font-size:13px;margin-bottom:6px}
+.vnumber{font-size:30px;font-weight:800;margin:0 0 8px 0}
+.vmeta{color:var(--muted);font-size:13px;margin-bottom:10px}
+.quickstats{
       display:grid;
       grid-template-columns: repeat(4, 1fr);
       gap:10px;
     }
-    @media (max-width: 700px){
+@media (max-width: 700px){
       .quickstats{grid-template-columns: repeat(2, 1fr);}
     }
-
-    .stat{
+.stat{
       padding:12px;
       border-radius:14px;
       border:1px solid rgba(255,255,255,.14);
       background: rgba(255,255,255,.05);
     }
-    .stat .n{font-size:24px;font-weight:800;line-height:1;margin-bottom:5px}
-    .stat .t{font-size:12px;color:var(--muted)}
-
-    .itemlist{
+.stat .n{font-size:24px;font-weight:800;line-height:1;margin-bottom:5px}
+.stat .t{font-size:12px;color:var(--muted)}
+.itemlist{
       list-style:none;
       padding:0;
       margin:0;
@@ -573,8 +515,7 @@ $releasedVersions = array_values(array_filter(
       flex-direction:column;
       gap:10px;
     }
-
-    .item{
+.item{
       display:flex;
       gap:10px;
       align-items:flex-start;
@@ -583,8 +524,7 @@ $releasedVersions = array_values(array_filter(
       border:1px solid rgba(255,255,255,.14);
       background: rgba(255,255,255,.05);
     }
-
-    .badge{
+.badge{
       display:inline-flex;
       align-items:center;
       justify-content:center;
@@ -597,65 +537,59 @@ $releasedVersions = array_values(array_filter(
       background: rgba(255,255,255,.10);
       flex:0 0 auto;
     }
-    .badge.new{background:rgba(70, 180, 110, .26)}
-    .badge.improve{background:rgba(70, 120, 220, .26)}
-    .badge.fix{background:rgba(205, 145, 55, .26)}
-    .badge.security{background:rgba(190, 70, 70, .26)}
-    .badge.idea{background:rgba(140, 95, 205, .26)}
-    .badge.locked{background:rgba(160,160,160,.26)}
-    .badge.future{background:rgba(90,160,230,.26)}
-
-    .itembody{flex:1}
-    .itemtext{line-height:1.45}
-    .itemmeta{margin-top:6px;font-size:12px;color:var(--muted)}
-    .empty{color:var(--muted);font-size:13px;padding:6px 0 2px 0}
-
-    .versionblock{
+.badge.new{background:rgba(70, 180, 110, .26)}
+.badge.improve{background:rgba(70, 120, 220, .26)}
+.badge.fix{background:rgba(205, 145, 55, .26)}
+.badge.security{background:rgba(190, 70, 70, .26)}
+.badge.idea{background:rgba(140, 95, 205, .26)}
+.badge.locked{background:rgba(160,160,160,.26)}
+.badge.future{background:rgba(90,160,230,.26)}
+.itembody{flex:1}
+.itemtext{line-height:1.45}
+.itemmeta{margin-top:6px;font-size:12px;color:var(--muted)}
+.empty{color:var(--muted);font-size:13px;padding:6px 0 2px 0}
+.versionblock{
       margin-top:16px;
       padding-top:14px;
       border-top:1px solid rgba(255,255,255,.10);
     }
-    .versionblock:first-child{margin-top:0;padding-top:0;border-top:none}
-
-    .typetitle{
+.versionblock:first-child{margin-top:0;padding-top:0;border-top:none}
+.typetitle{
       display:flex;
       align-items:center;
       gap:10px;
       margin:0 0 10px 0;
       font-size:15px;
     }
-
-    .typeblock{
+.typeblock{
       margin-top:14px;
       padding-top:14px;
       border-top:1px solid rgba(255,255,255,.10);
     }
-    .typeblock:first-child{margin-top:0;padding-top:0;border-top:none}
-
-    .editbox{
+.typeblock:first-child{margin-top:0;padding-top:0;border-top:none}
+.editbox{
       margin-top:10px;
       padding:12px;
       border-radius:14px;
       border:1px solid rgba(255,255,255,.12);
       background: rgba(255,255,255,.04);
     }
-
-    code{
+code{
       color:#fff;
       background: rgba(0,0,0,.25);
       padding: 2px 6px;
       border-radius: 10px;
       border: 1px solid rgba(255,255,255,.12);
     }
-  </style>
+</style>
 </head>
 
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
   <div class="backdrop">
     <div class="wrap">
       <div class="topbar">
         <div class="brand">
-          <h1>Porbeheer</h1>
+          <h1><a href="/admin/dashboard.php">Porbeheer</a></h1>
           <div class="sub">POP Oefenruimte Zevenaar • changelog beheer</div>
         </div>
 

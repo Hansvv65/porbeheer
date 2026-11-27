@@ -156,16 +156,243 @@ function requireRole(array $roles): void
     global $pdo;
     
     if (!hasAnyRole($pdo, $roles)) {
-        http_response_code(403);
-        exit('Geen toegang. Je hebt niet de juiste rechten.');
+        renderNoAccessPage();
     }
+}
+
+/* =========================================================================
+ * ONDERDEEL-RECHTEN (fase 3)
+ * -------------------------------------------------------------------------
+ * Vervangt op termijn requireRole()/hasAnyRole() als basis voor
+ * paginatoegang. Rollen (uit user_roles, een gebruiker kan er meerdere
+ * hebben) zijn herbruikbare sjablonen die vastleggen wat je op elk
+ * onderdeel ('bands','planning','sleutels','financien','contacten','admin')
+ * mag: niets, 'read' of 'write' (write impliceert read). De effectieve
+ * rechten van een gebruiker zijn de optelsom van al zijn rollen: per
+ * onderdeel geldt het hoogste niveau dat een van zijn rollen geeft.
+ *
+ * 'own_only' betekent: dit schrijfrecht geldt alleen voor eigen records
+ * (via contact_id / band-koppeling), niet voor alles binnen dat onderdeel.
+ * Dit wordt in de betreffende pagina's zelf verder afgedwongen (fase 4),
+ * hasSectionAccess() geeft alleen aan dát het om een own-only recht gaat.
+ *
+ * 'planning' heeft voor iedere ingelogde gebruiker altijd minimaal 'read',
+ * los van rollen (de "All"-basis) -- zie getSectionAccess().
+ *
+ * Bestuurslid-status (is_bestuurslid) blijft daarnaast een los vlaggetje
+ * voor de bestuurs-mailinglijst; dat heeft geen invloed op deze rechten.
+ *
+ * Let op: net als getUserRoles() wordt dit in de sessie gecached. Een
+ * rechtenwijziging door een admin wordt pas zichtbaar bij een nieuwe login
+ * van de betreffende gebruiker (zelfde bestaande beperking als bij rollen).
+ * ========================================================================= */
+
+/**
+ * Interne helper: rangorde van een toegangsniveau, voor vergelijking.
+ */
+function sectionLevelRank(string $level): int
+{
+    return $level === 'write' ? 2 : 1;
+}
+
+/**
+ * Geeft de effectieve onderdeel-rechten van de ingelogde gebruiker terug,
+ * opgebouwd uit al zijn rollen, bijv.
+ * ['financien' => ['level'=>'write','own_only'=>false], 'sleutels' => ['level'=>'read','own_only'=>false]]
+ * Onderdelen die nergens in voorkomen staan er niet in (= geen toegang),
+ * behalve 'planning' die altijd minimaal 'read' krijgt (de "All"-basis).
+ */
+function getSectionAccess(PDO $pdo): array
+{
+    if (!isLoggedIn()) {
+        return [];
+    }
+
+    if (isset($_SESSION['user']['section_access']) && is_array($_SESSION['user']['section_access'])) {
+        return $_SESSION['user']['section_access'];
+    }
+
+    $roles = getUserRoles($pdo);
+    $access = [];
+
+    if ($roles) {
+        try {
+            $in = implode(',', array_fill(0, count($roles), '?'));
+            $stmt = $pdo->prepare("SELECT section, level, own_only FROM role_section_access WHERE role IN ($in)");
+            $stmt->execute($roles);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $section = $row['section'];
+                $level = $row['level'];
+                $ownOnly = (bool)$row['own_only'];
+                $existing = $access[$section] ?? null;
+                if ($existing === null || sectionLevelRank($level) > sectionLevelRank($existing['level'])) {
+                    $access[$section] = ['level' => $level, 'own_only' => $ownOnly];
+                } elseif (sectionLevelRank($level) === sectionLevelRank($existing['level']) && !$ownOnly) {
+                    // Bij gelijk niveau wint een niet-own_only recht (breder) over own_only.
+                    $access[$section] = ['level' => $level, 'own_only' => false];
+                }
+            }
+        } catch (Throwable $e) {
+            $access = [];
+        }
+    }
+
+    // "All"-basis: iedere ingelogde gebruiker mag de planning altijd minimaal lezen.
+    if (!isset($access['planning'])) {
+        $access['planning'] = ['level' => 'read', 'own_only' => false];
+    }
+
+    $_SESSION['user']['section_access'] = $access;
+    return $access;
+}
+
+/**
+ * Heeft de ingelogde gebruiker minimaal $minLevel op $section?
+ */
+function hasSectionAccess(PDO $pdo, string $section, string $minLevel = 'read'): bool
+{
+    $validSections = ['bands', 'planning', 'sleutels', 'financien', 'contacten', 'admin'];
+    if (!in_array($section, $validSections, true)) {
+        return false;
+    }
+    $access = getSectionAccess($pdo);
+    $entry = $access[$section] ?? null;
+    if ($entry === null) {
+        return false;
+    }
+    return sectionLevelRank($entry['level']) >= sectionLevelRank($minLevel);
+}
+
+/**
+ * Is het schrijfrecht van de ingelogde gebruiker op $section beperkt tot
+ * eigen records (own_only)? Geeft false terug als er helemaal geen
+ * write-toegang is.
+ */
+function hasOwnOnlySectionAccess(PDO $pdo, string $section): bool
+{
+    $access = getSectionAccess($pdo);
+    $entry = $access[$section] ?? null;
+    if ($entry === null) {
+        return false;
+    }
+    return (bool)$entry['own_only'];
+}
+
+/**
+ * Vereist minimaal $minLevel op $section, of stuurt een 403.
+ * Gebruik: requireSectionAccess('financien', 'write');
+ */
+function requireSectionAccess(string $section, string $minLevel = 'read'): void
+{
+    requireLogin();
+
+    global $pdo;
+
+    if (!hasSectionAccess($pdo, $section, $minLevel)) {
+        renderNoAccessPage($section);
+    }
+}
+
+/**
+ * Nette, gestylede 403-pagina i.p.v. een kale exit()-tekst. Sluit het
+ * request af (exit) net als de oude versie deed.
+ */
+function renderNoAccessPage(?string $section = null): void
+{
+    http_response_code(403);
+
+    $labels = [
+        'bands'     => 'Bands',
+        'planning'  => 'Planning',
+        'sleutels'  => 'Sleutels & Kasten',
+        'financien' => 'Financiën',
+        'contacten' => 'Contacten',
+        'admin'     => 'Admin',
+    ];
+    $sectionLabel = $section !== null ? ($labels[$section] ?? $section) : null;
+
+    $sectionHomes = [
+        'bands'     => '/admin/bands.php',
+        'planning'  => '/admin/planning.php',
+        'sleutels'  => '/admin/keys.php',
+        'financien' => '/admin/finance.php',
+        'contacten' => '/admin/contacts.php',
+        'admin'     => '/admin/beheer.php',
+    ];
+    $backUrl = ($section !== null && isset($sectionHomes[$section])) ? $sectionHomes[$section] : '/admin/dashboard.php';
+    $backLabel = ($section !== null && isset($sectionHomes[$section])) ? 'Terug naar ' . $sectionLabel : 'Terug naar dashboard';
+
+    header('Content-Type: text/html; charset=UTF-8');
+    ?>
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geen toegang - Porbeheer</title>
+<link rel="stylesheet" href="/assets/css/main.css">
+<style>
+.noaccess-panel{max-width:440px;margin:0 auto;text-align:center;padding:34px 28px;}
+.noaccess-icon{font-size:40px;line-height:1;margin-bottom:6px;}
+.noaccess-panel h1{margin:0 0 8px 0;font-size:20px;}
+.noaccess-panel p{color:var(--muted);margin:0 0 20px 0;font-size:14px;}
+.noaccess-panel .btn{
+  display:inline-block;padding:10px 18px;border-radius:12px;
+  border:1px solid rgba(255,255,255,.22);
+  background:linear-gradient(180deg, var(--glass), var(--glass2));
+  color:#fff;text-decoration:none;font-weight:800;
+}
+.noaccess-panel .btn:hover{border-color:rgba(255,255,255,.38)}
+</style>
+</head>
+<body>
+<div class="backdrop">
+  <div class="panel noaccess-panel">
+    <div class="noaccess-icon">🔒</div>
+    <h1>Geen toegang</h1>
+    <p><?php if ($sectionLabel !== null): ?>
+      Je hebt geen rechten voor het onderdeel <strong><?= htmlspecialchars($sectionLabel, ENT_QUOTES, 'UTF-8') ?></strong>.
+    <?php else: ?>
+      Je hebt niet de juiste rechten voor deze pagina.
+    <?php endif; ?>
+      Neem contact op met een beheerder als je denkt dat dit niet klopt.</p>
+    <a class="btn" href="<?= htmlspecialchars($backUrl, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($backLabel, ENT_QUOTES, 'UTF-8') ?></a>
+  </div>
+</div>
+</body>
+</html>
+    <?php
+    exit;
+}
+
+/**
+ * Ververst de sessie-cache van de onderdeel-rechten (bijv. na een edit door
+ * een admin binnenin dezelfde sessie, of bij login). Geen effect op andere,
+ * al lopende sessies van diezelfde gebruiker -- die zien de wijziging pas
+ * bij hun volgende login (zelfde bestaande beperking als all_roles).
+ */
+function refreshSectionAccessCache(): void
+{
+    unset($_SESSION['user']['section_access']);
+}
+
+/**
+ * Is de ingelogde gebruiker gekoppeld aan een contact (dus een
+ * "contactaccount" i.p.v. een personeelsaccount)? Personeelsleden die
+ * toevallig ook contact zijn, hebben dit veld ook gevuld -- dat sluit
+ * onderdeel-rechten niet uit.
+ */
+function currentContactId(): ?int
+{
+    $cid = $_SESSION['user']['contact_id'] ?? null;
+    return $cid !== null ? (int)$cid : null;
 }
 
 /**
  * Synchroniseer de primaire rol in users tabel op basis van de hoogste prioriteit
  */
 function syncPrimaryRole(PDO $pdo, int $userId): void {
-    $rolePriority = ['GEBRUIKER' => 1, 'FINANCIEEL' => 2, 'BEHEER' => 3, 'BESTUURSLID' => 4, 'ADMIN' => 5];
+    $rolePriority = ['GEBRUIKER' => 1, 'FINANCIEEL' => 2, 'BEHEER' => 3, 'BESTUURSLID' => 4, 'ADMIN' => 5, 'BANDLID' => 0];
     
     $stmt = $pdo->prepare("SELECT role FROM user_roles WHERE user_id = ?");
     $stmt->execute([$userId]);
@@ -205,8 +432,14 @@ function requireCsrf(?string $token): void
         && hash_equals((string)$_SESSION['csrf'], $token);
 
     if (!$ok) {
-        http_response_code(400);
-        exit('CSRF fout.');
+        // Meestal is dit geen aanval maar een verlopen sessie (het formulier
+        // stond te lang open, zie startSecureSession()'s idle-timeout) --
+        // stuur terug naar dezelfde pagina met een vlag, zodat die een
+        // vriendelijke melding kan tonen i.p.v. een kale foutpagina.
+        $path = (string)parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
+        if ($path === '') $path = '/';
+        header('Location: ' . $path . '?csrf_expired=1');
+        exit;
     }
 }
 
@@ -249,6 +482,23 @@ function enforce2faSetupIfNeeded(): void
     }
 }
 
+/**
+ * Houdt de oude 'active' kolom gelijk aan 'status' (en deleted_at). Gebruikt
+ * door zowel users_detail.php als quick_approve.php -- centraal gehouden om
+ * niet weer twee losse kopieën te krijgen die uit de pas kunnen lopen.
+ */
+function syncActiveWithStatus(PDO $pdo, int $id): void {
+    $pdo->prepare("
+        UPDATE users
+        SET active = CASE
+            WHEN deleted_at IS NOT NULL THEN 0
+            WHEN status = 'ACTIVE' THEN 1
+            ELSE 0
+        END
+        WHERE id = ?
+    ")->execute([$id]);
+}
+
 function requireLogin(): void
 {
     if (!isLoggedIn()) {
@@ -288,7 +538,7 @@ function auditLog(PDO $pdo, string $eventType, string $eventName, array $details
             'INSERT INTO audit_log
               (user_id, username, role, event_type, event_name, method, path, details, ip, user_agent, created_at)
              VALUES
-              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())'
+              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
 
         $st->execute([
@@ -302,6 +552,7 @@ function auditLog(PDO $pdo, string $eventType, string $eventName, array $details
             $json,
             $ip !== '' ? $ip : null,
             $ua !== '' ? $ua : null,
+            date('Y-m-d H:i:s'),
         ]);
     } catch (Throwable $e) {
         // audit logging mag de app nooit breken
@@ -348,8 +599,11 @@ function themeImage(string $baseName, PDO $pdo): string
 
 function refreshSessionUser(PDO $pdo, int $userId): void
 {
+    // SELECT * (net als completeLoginSession): een vaste kolomlijst crashte
+    // op productie omdat de kolom is_bestuurslid daar niet (meer) bestaat.
+    // Ontbrekende velden worden hieronder al netjes met ?? / !empty() opgevangen.
     $st = $pdo->prepare("
-        SELECT id, username, role, theme_variant, totp_enabled
+        SELECT *
         FROM users
         WHERE id = ?
         LIMIT 1
@@ -370,8 +624,11 @@ function refreshSessionUser(PDO $pdo, int $userId): void
         $_SESSION['user'] = [
             'id'             => (int)$u['id'],
             'username'       => (string)$u['username'],
+            'first_name'     => (string)($u['first_name'] ?? ''),
             'role'           => (string)($u['role'] ?? 'GEBRUIKER'),
             'all_roles'      => $allRoles,
+            'contact_id'     => isset($u['contact_id']) && $u['contact_id'] !== null ? (int)$u['contact_id'] : null,
+            'is_bestuurslid' => !empty($u['is_bestuurslid']),
             'theme_variant'  => normalizeThemeVariant((string)($u['theme_variant'] ?? 'a')),
             'must_setup_2fa' => empty($u['totp_enabled']),
         ];
@@ -429,8 +686,11 @@ function completeLoginSession(PDO $pdo, array $u, bool $mustSetup2fa): void
     $_SESSION['user'] = [
         'id'             => $uid,
         'username'       => (string)$u['username'],
+        'first_name'     => (string)($u['first_name'] ?? ''),
         'role'           => (string)($u['role'] ?? 'GEBRUIKER'),
         'all_roles'      => $allRoles,
+        'contact_id'     => isset($u['contact_id']) && $u['contact_id'] !== null ? (int)$u['contact_id'] : null,
+        'is_bestuurslid' => !empty($u['is_bestuurslid']),
         'theme_variant'  => normalizeThemeVariant((string)($u['theme_variant'] ?? 'a')),
         'must_setup_2fa' => $mustSetup2fa,
     ];

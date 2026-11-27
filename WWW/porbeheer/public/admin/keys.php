@@ -7,10 +7,24 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('sleutels', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
+
+// Alleen-eigen (BANDLID): de Contract-knop mag alleen bij sleutels van de
+// eigen band(en) staan, niet bij elke band -- contract_edit.php blokkeert
+// dit ook al serverside, maar de knop moet er dan ook niet staan.
+$myBandIdsForKeys = null; // null = geen beperking (volledige toegang)
+if (hasOwnOnlySectionAccess($pdo, 'sleutels')) {
+    $myBandIdsForKeys = [];
+    $myContactId = currentContactId();
+    if ($myContactId !== null) {
+        $mb = $pdo->prepare("SELECT id FROM bands WHERE (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL");
+        $mb->execute([$myContactId, $myContactId]);
+        $myBandIdsForKeys = array_map('intval', $mb->fetchAll(PDO::FETCH_COLUMN));
+    }
+}
 $bg = themeImage('keys', $pdo);
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/keys.php');
@@ -150,42 +164,14 @@ foreach ($keys as $kr) {
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - Kasten & Sleutels</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);}
-body{
-  margin:0;
-  font-family:Arial,sans-serif;
-  color:var(--text);
-  background:url('<?= h($bg) ?>') no-repeat center center fixed;
-  background-size:cover;
-}
-.backdrop{min-height:100vh;background:
-  radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-  linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-  padding:26px;box-sizing:border-box;display:flex;justify-content:center;}
-.wrap{width:min(1200px,96vw);}
-.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px;}
-.brand h1{margin:0;font-size:28px;letter-spacing:.5px}
-.brand .sub{margin-top:6px;color:var(--muted);font-size:14px}
-.userbox{background:var(--glass);border:1px solid var(--border);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow);
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);min-width:260px;}
-.userbox .line1{font-weight:bold}
 .userbox .line2{color:var(--muted);margin-top:6px;font-size:13px;display:flex;flex-wrap:wrap;gap:10px}
-.panel{margin-top:10px;border-radius:20px;border:1px solid rgba(255,255,255,.18);
-  background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
-  box-shadow:var(--shadow);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:18px;}
 .grid{display:grid;grid-template-columns:1fr;gap:14px}
 .card{border-radius:16px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.05));
   padding:14px;box-shadow:0 10px 22px rgba(0,0,0,.30);backdrop-filter:blur(10px);}
-h2{margin:0 0 8px 0;font-size:18px}
-.small{font-size:13px;color:var(--muted)}
-.tablewrap{overflow:auto;border-radius:14px;border:1px solid rgba(255,255,255,.12)}
-table{width:100%;border-collapse:collapse}
 th,td{padding:10px;border-bottom:1px solid rgba(255,255,255,.12);text-align:left;font-size:14px;vertical-align:top}
-th{background:rgba(255,255,255,.06)}
-a{color:#fff;text-decoration:none} a:hover{color:#ffd9b3}
-.msg{margin:10px 0;font-size:13px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08)}
-.err{color:#ffb3b3}
+a{color:#fff;text-decoration:none}
 .btn{display:inline-block;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.22);
   background:linear-gradient(180deg, var(--glass), var(--glass2));color:#fff;font-weight:800;cursor:pointer}
 .btn:hover{border-color:rgba(255,255,255,.38);transform:translateY(-1px)}
@@ -203,12 +189,9 @@ code{background:rgba(0,0,0,.25);padding:2px 6px;border-radius:8px;border:1px sol
 .toggle-btn{background:var(--glass);border:1px solid var(--border);color:#fff;padding:8px 16px;border-radius:30px;cursor:pointer;font-weight:bold;}
 .toggle-btn.active{background:#2c7da0;border-color:#4a9fc5;}
 hr.sep{border:none;border-top:1px solid rgba(255,255,255,.12);margin:14px 0}
-a{color:#fff;text-decoration:none;transition:color .15s ease}
-a:hover{color:#ffd9b3}
-a:visited{color:#ffe0c2}
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop"><div class="wrap">
 
   <div class="topbar">
@@ -218,7 +201,6 @@ a:visited{color:#ffe0c2}
       <div class="kpi">
         <div class="pill">Kasten: <strong style="color:#fff"><?= (int)$lockerCount ?></strong> (vrij: <strong style="color:#fff"><?= (int)$freeLockers ?></strong>)</div>
         <div class="pill">Sleutels: <strong style="color:#fff"><?= (int)$keyCount ?></strong> (master: <strong style="color:#fff"><?= (int)$masterCount ?></strong>, extern: <strong style="color:#fff"><?= (int)$externalCount ?></strong>)</div>
-        <a class="pill" href="/admin/keys_edit.php">Nieuwe sleutel</a>
       </div>
     </div>
 
@@ -226,8 +208,6 @@ a:visited{color:#ffe0c2}
       <div class="line1"><?= h($user['username'] ?? '') ?> · <?= h($role) ?></div>
       <div class="line2">
         <a href="/admin/dashboard.php">Dashboard</a>
-        <a href="#kasten">POR-kasten</a>
-        <a href="#sleutels">Sleutels</a>
       </div>
     </div>
   </div>
@@ -389,7 +369,7 @@ a:visited{color:#ffe0c2}
                     <div class="small" style="margin-top:6px">
                       Aan:
                       <?php if ($contactId > 0): ?>
-                        <a href="/admin/contacts_view.php?id=<?= $contactId ?>"><?= h($contactName) ?></a>
+                        <a href="/admin/contact_edit.php?id=<?= $contactId ?>"><?= h($contactName) ?></a>
                       <?php else: ?>
                         <span class="small">Onbekend contact</span>
                       <?php endif; ?>
@@ -407,8 +387,8 @@ a:visited{color:#ffe0c2}
                   <?php endif; ?>
                 </td>
                 <td>
-                  <a class="btn btn-sm" href="/admin/keys_edit.php?id=<?= $keyId ?>">Bewerken</a>
-                      <?php if ($isIssued): ?>
+                  <?php if (hasSectionAccess($pdo, 'sleutels', 'write')): ?><a class="btn btn-sm" href="/admin/keys_edit.php?id=<?= $keyId ?>">Bewerken</a><?php endif; ?>
+                      <?php if ($isIssued && ($myBandIdsForKeys === null || in_array((int)($r['band_id'] ?? 0), $myBandIdsForKeys, true))): ?>
                           <a class="btn btn-sm btn-contract" href="/admin/contract_edit.php?id=<?= $keyId ?>" title="Contract bekijken">📄 Contract</a>
                       <?php endif; ?>
                 </td>

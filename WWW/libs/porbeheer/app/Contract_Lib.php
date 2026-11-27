@@ -74,6 +74,30 @@ function contractDir(int $keyContractId): string
 }
 
 /**
+ * Schrijfbare tijdelijke map voor DomPDF. Op managed hosting ligt de systeem-temp
+ * (/tmp) vaak buiten open_basedir; dan mislukt het inbedden van afbeeldingen
+ * (data:-URI's worden eerst gedecodeerd naar een temp-bestand). We wijzen DomPDF
+ * daarom naar onze eigen, bewezen schrijfbare opslagmap.
+ */
+function contractDompdfTmpDir(): string
+{
+    $d = contractStorageBaseDir() . '/_dompdf_tmp';
+    contractEnsureDir($d);
+    return $d;
+}
+
+/**
+ * Pas de aanbevolen DomPDF-opties toe voor het inbedden van afbeeldingen.
+ */
+function contractApplyDompdfImageOptions(\Dompdf\Options $options): void
+{
+    $tmp = contractDompdfTmpDir();
+    $options->set('isRemoteEnabled', true);   // data:-URI's worden als "remote" gezien
+    $options->set('tempDir', $tmp);           // schrijfbaar binnen open_basedir
+    $options->set('chroot', $tmp);
+}
+
+/**
  * Schrijf bytes weg onder een willekeurige bestandsnaam.
  * @return array{relative_path:string,absolute_path:string,size:int,sha256:string,mime:string}
  */
@@ -337,7 +361,9 @@ function contractImagesToPdf(array $imageBlobs): string
     $options = new \Dompdf\Options();
     $options->set('defaultFont', 'Helvetica');
     $options->set('isHtml5ParserEnabled', true);
-    $options->set('isRemoteEnabled', false);
+    // De foto's worden als data:-URI ingesloten. DomPDF heeft daarvoor een
+    // schrijfbare temp-map nodig en moet data:-URI's toestaan (zie helper).
+    contractApplyDompdfImageOptions($options);
 
     $dompdf = new \Dompdf\Dompdf($options);
     $dompdf->loadHtml($html);

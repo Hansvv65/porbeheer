@@ -30,15 +30,32 @@ if (!defined('APP_ROOT')) {
 if (!defined('VENDOR_ROOT')) {
     define('VENDOR_ROOT', PROJECT_ROOT . '/vendor');
 }
+if (!defined('PUBLIC_ROOT')) {
+    define('PUBLIC_ROOT', dirname(PROJECT_ROOT, 2) . '/porbeheer/public');  // /var/www/porbeheer/public
+}
 
 // ====== AUTOLOADER ======
 require_once VENDOR_ROOT . '/autoload.php';
 
 // ====== GENERIC HTML ESCAPE ======
 if (!function_exists('h')) {
-    function h(?string $v): string
+    /**
+     * Accepteert bewust elk scalair type (string/int/float/bool) plus null,
+     * niet alleen ?string -- databasevelden als locker_id (int) of amount
+     * (decimal) belanden hier via array-toegang soms rechtstreeks in, zonder
+     * expliciete (string)-cast op de aanroepplek. Met een strikt ?string-type
+     * gaf dat een fatale TypeError (zie het incident met contract_edit.php en
+     * keys_edit.php); dit voorkomt die hele klasse fouten structureel.
+     */
+    function h(mixed $v): string
     {
-        return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+        if ($v === null) {
+            return '';
+        }
+        if (is_scalar($v)) {
+            return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+        }
+        return '';
     }
 }
 
@@ -292,6 +309,14 @@ $options = [
 try {
     $pdo = new PDO($dsn, $DB_USER, $DB_PASS, $options);
     $GLOBALS['pdo'] = $pdo;
+
+    // MySQL's NOW()/CURRENT_TIMESTAMP gebruiken standaard de tijdzone van de
+    // MySQL-server zelf (vaak UTC), los van de Europe/Amsterdam-instelling
+    // hierboven voor PHP. Daardoor liepen tijden in de database (bijv. de
+    // audit-log) tot 2 uur achter. Dit zet de sessie-tijdzone gelijk aan wat
+    // PHP nu net heeft ingesteld, inclusief zomer-/wintertijd.
+    $tzOffset = (new DateTime('now'))->format('P');
+    $pdo->exec("SET time_zone = " . $pdo->quote($tzOffset));
 } catch (Throwable $e) {
     http_response_code(500);
     echo 'Database connectie mislukt.';
@@ -330,3 +355,82 @@ if (function_exists('isLoggedIn') && isLoggedIn()) {
         }
     }
 }
+
+// ==================== GLOBALE FOUTAFHANDELING ====================
+// Vangt onverwachte PHP-fouten (fatale errors, uncaught exceptions/TypeErrors
+// zoals het eerdere incident met h() en een integer-veld) af met een nette
+// pagina i.p.v. een stil afgebroken/lege pagina, en logt de details in de
+// audit-log zodat zulke problemen niet meer onopgemerkt blijven.
+if (!function_exists('renderFatalErrorPage')) {
+    function renderFatalErrorPage(string $message, string $file, int $line): void
+    {
+        if (ob_get_level() > 0) {
+            @ob_end_clean();
+        }
+
+        // Loggen: nooit laten falen op een kapotte DB-verbinding e.d.
+        try {
+            global $pdo;
+            if (isset($pdo) && $pdo instanceof PDO && function_exists('auditLog')) {
+                auditLog($pdo, 'PHP_ERROR', 'fatal', [
+                    'message' => mb_substr($message, 0, 500),
+                    'file'    => $file,
+                    'line'    => $line,
+                    'uri'     => (string)($_SERVER['REQUEST_URI'] ?? ''),
+                ]);
+            }
+        } catch (Throwable $e) {
+            error_log('Kon fout niet naar audit_log schrijven: ' . $e->getMessage());
+        }
+        error_log("Porbeheer fatale fout: $message in $file:$line");
+
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: text/html; charset=UTF-8');
+        }
+        ?>
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Er ging iets mis - Porbeheer</title>
+<link rel="stylesheet" href="/assets/css/main.css">
+<style>
+.err-panel{max-width:440px;margin:40px auto;text-align:center;padding:34px 28px;}
+.err-panel .icon{font-size:40px;line-height:1;margin-bottom:6px;}
+.err-panel h1{margin:0 0 8px 0;font-size:20px;}
+.err-panel p{color:var(--muted, #7b8aa0);margin:0 0 20px 0;font-size:14px;}
+.err-panel .btn{
+  display:inline-block;padding:10px 18px;border-radius:12px;
+  border:1px solid rgba(255,255,255,.22);
+  background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.05));
+  color:#fff;text-decoration:none;font-weight:800;
+}
+</style>
+</head>
+<body style="background:#0b0f16;">
+<div class="backdrop">
+  <div class="panel err-panel">
+    <div class="icon">⚠️</div>
+    <h1>Er ging iets mis</h1>
+    <p>Er is een onverwachte fout opgetreden. Dit is automatisch gemeld zodat we het kunnen bekijken.</p>
+    <a class="btn" href="/admin/dashboard.php">Terug naar dashboard</a>
+  </div>
+</div>
+</body>
+</html>
+        <?php
+    }
+}
+
+set_exception_handler(static function (Throwable $e): void {
+    renderFatalErrorPage($e->getMessage(), $e->getFile(), $e->getLine());
+});
+
+register_shutdown_function(static function (): void {
+    $err = error_get_last();
+    if ($err !== null && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        renderFatalErrorPage((string)$err['message'], (string)$err['file'], (int)$err['line']);
+    }
+});

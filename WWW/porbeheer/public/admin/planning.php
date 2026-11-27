@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('planning', 'read');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -161,49 +161,10 @@ $headerTitle = weekTitle($weekStart, $maandenVoluit) . ' + ' . weekTitle($weekSt
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Planning - Porbeheer</title>
 
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{
---text:#fff;
---muted:rgba(255,255,255,.78);
---border:rgba(255,255,255,.22);
---glass:rgba(255,255,255,.12);
---glass2:rgba(255,255,255,.06);
---shadow:0 14px 40px rgba(0,0,0,.45);
-}
-
-body{
-margin:0;
-font-family:Arial,sans-serif;
-color:var(--text);
-background:url('<?= h($bg) ?>') no-repeat center center fixed;
-background-size:cover;
-}
-
-.backdrop{
-min-height:100vh;
-background:
-radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),
-linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-padding:26px;
-box-sizing:border-box;
-display:flex;
-justify-content:center;
-}
-
 .wrap{width:min(1400px,96vw);}
-
-.topbar{
-display:flex;
-align-items:flex-end;
-justify-content:space-between;
-gap:16px;
-flex-wrap:wrap;
-margin-bottom:14px;
-}
-
 .brand h1{margin:0;font-size:28px}
-.brand .sub{margin-top:6px;color:var(--muted);font-size:14px}
-
 .userbox{
 background:var(--glass);
 border:1px solid var(--border);
@@ -213,12 +174,8 @@ box-shadow:var(--shadow);
 backdrop-filter:blur(10px);
 min-width:260px;
 }
-
-.userbox .line1{font-weight:bold}
-.userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
 .userbox a{color:#fff;text-decoration:none}
 .userbox a:hover{color:#ffd9b3}
-
 .panel{
 border-radius:20px;
 border:1px solid rgba(255,255,255,.18);
@@ -227,7 +184,6 @@ box-shadow:var(--shadow);
 backdrop-filter:blur(12px);
 padding:18px;
 }
-
 .nav{
 display:flex;
 justify-content:space-between;
@@ -236,13 +192,11 @@ margin-bottom:15px;
 flex-wrap:wrap;
 gap:10px;
 }
-
 .navleft{
 display:flex;
 flex-wrap:wrap;
 gap:8px;
 }
-
 .btn{
 text-decoration:none;
 color:#fff;
@@ -252,15 +206,12 @@ border-radius:12px;
 border:1px solid rgba(255,255,255,.22);
 background:linear-gradient(180deg,var(--glass),var(--glass2));
 }
-
 .btn:hover{border-color:rgba(255,255,255,.38)}
-
 .calendar{
 display:grid;
 grid-template-columns:repeat(7, minmax(0,1fr));
 gap:10px;
 }
-
 .weekrow{
 grid-column:1 / -1;
 padding:10px 12px;
@@ -271,7 +222,6 @@ font-weight:bold;
 letter-spacing:.2px;
 color:rgba(255,255,255,.92);
 }
-
 .day{
 border-radius:16px;
 border:1px solid rgba(255,255,255,.18);
@@ -280,7 +230,6 @@ padding:10px;
 min-height:155px;
 position:relative;
 }
-
 .datefull{
 font-weight:bold;
 margin-bottom:8px;
@@ -289,8 +238,6 @@ border-bottom:1px solid rgba(255,255,255,.12);
 font-size:13px;
 color:rgba(255,255,255,.92);
 }
-
-/* SLOT */
 a.slot{
 display:flex;
 justify-content:space-between;
@@ -306,12 +253,10 @@ color:#fff;
 margin-bottom:6px;
 min-height:54px;
 }
-
 a.slot:hover{
 border-color:rgba(255,255,255,.35);
 background:rgba(255,255,255,.08);
 }
-
 a.slot .ts{
 font-size:11px;
 letter-spacing:.2px;
@@ -322,7 +267,6 @@ background:rgba(255,255,255,.10);
 border:1px solid rgba(255,255,255,.10);
 flex:0 0 auto;
 }
-
 a.slot .val{
 font-size:13px;
 font-weight:bold;
@@ -332,21 +276,17 @@ display:-webkit-box;
 -webkit-box-orient:vertical;
 overflow:hidden;
 }
-
 a.slot.empty .val{
 color:rgba(255,255,255,.72);
 font-weight:bold;
 }
-
 a.slot.booked .val{
 color:rgba(255,255,255,.95);
 }
-
 a.slot.contract{
 border-color:rgba(255,255,255,.16);
 background:rgba(0,0,0,.18);
 }
-
 .day.today{
 border:1px solid rgba(255, 217, 179, .65);
 background:
@@ -359,7 +299,6 @@ box-shadow:
 0 0 18px rgba(255,217,179,.18),
 var(--shadow);
 }
-
 .todayBadge{
 display:inline-block;
 margin-left:8px;
@@ -371,17 +310,11 @@ background:rgba(255,217,179,.22);
 border:1px solid rgba(255,217,179,.35);
 color:#fff2de;
 }
-
-a{color:#fff;text-decoration:none;transition:color .15s ease}
-a:hover{color:#ffd9b3}
-a:visited{color:#ffe0c2}
-
 @media (max-width: 900px){
   .calendar{
     grid-template-columns:repeat(2, minmax(0,1fr));
   }
 }
-
 @media (max-width: 640px){
   .calendar{
     grid-template-columns:1fr;
@@ -389,7 +322,7 @@ a:visited{color:#ffe0c2}
 }
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 
 <div class="backdrop">
 <div class="wrap">
@@ -402,7 +335,7 @@ a:visited{color:#ffe0c2}
 
   <div class="userbox">
     <div class="line1"><?= h($user['username'] ?? '') ?> · <?= h($role) ?></div>
-    <div class="line2"><a href="/admin/dashboard.php">Dashboard</a> • <a href="/logout.php">Uitloggen</a></div>
+    <div class="line2"><a href="/admin/dashboard.php">Dashboard</a> <a href="/logout.php">Uitloggen</a></div>
   </div>
 </div>
 

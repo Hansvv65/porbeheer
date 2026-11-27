@@ -1,11 +1,9 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
+include __DIR__ . '/assets/includes/header.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/mail.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/auth.php';
-
-
-function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
 function getClientIp(): string {
     $headers = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
@@ -33,6 +31,9 @@ if (isset($_GET['cancel2fa'])) {
 
 $err = null;
 $info = null;
+if (isset($_GET['csrf_expired'])) {
+    $info = 'Je sessie was verlopen (te lang gewacht met inloggen). Probeer het opnieuw.';
+}
 $email = '';
 $ip = getClientIp();
 $timestamp = date('Y-m-d H:i:s');
@@ -241,12 +242,11 @@ $pendingUser = $pending2fa ? loadPending2faUser($pdo) : null;
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - Inloggen</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);
---glass:rgba(255,255,255,.14);--glass2:rgba(255,255,255,.08);--shadow:0 20px 50px rgba(0,0,0,.5);
---err:#FF8DA1;--ok:#7CFFB2;--info:#bf721f;--warn:#ffd86b;}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);
-background:url('/assets/images/loginbg.png') no-repeat center center fixed;background-size:cover;}
+/* Loginpagina heeft bewust een eigen, compacte kaartstijl i.p.v. de admin-layout. */
+:root{--err:#FF8DA1;--ok:#7CFFB2;--info:#bf721f;--warn:#ffd86b;
+--glass:rgba(255,255,255,.14);--glass2:rgba(255,255,255,.08);--shadow:0 20px 50px rgba(0,0,0,.5);}
 .backdrop{min-height:100vh;display:flex;align-items:center;justify-content:center;
 padding:26px;box-sizing:border-box;
 background:radial-gradient(circle at 25% 15%,rgba(0,0,0,.35),rgba(0,0,0,.75) 55%,rgba(0,0,0,.88));}
@@ -277,45 +277,26 @@ input:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0
 
 .helpbtn{
   position:absolute;top:16px;right:16px;
+  display:flex;align-items:center;justify-content:center;
   background:rgba(0,0,0,.35);border:1px solid var(--border);
   border-radius:50%;width:38px;height:38px;
   color:#fff;font-weight:900;font-size:18px;
+  text-decoration:none;line-height:1;
   cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.4);
 }
 .helpbtn:hover{background:rgba(255,255,255,.1);}
-.helpoverlay{
-  display:none;position:fixed;inset:0;z-index:100;
-  backdrop-filter:blur(8px);background:rgba(0,0,0,.8);
-  align-items:center;justify-content:center;
-}
-.helpoverlay.active{display:flex;}
-.helpcard{
-  width:min(480px,90vw);border-radius:20px;
-  border:1px solid rgba(255,255,255,.22);
-  background:linear-gradient(180deg,var(--glass),var(--glass2));
-  padding:24px;text-align:center;box-shadow:var(--shadow);
-}
-.helpcard h3{margin-top:0;margin-bottom:16px;color:var(--info);font-size:1.4rem;}
-.helpcard p{text-align:left;line-height:1.6;margin:12px 0;font-size:0.95rem;}
-.helpcard ul{text-align:left;padding-left:22px;margin:18px 0;list-style-type: none;}
-.helpcard li{margin-bottom:12px;color:var(--muted);position:relative;line-height:1.4;}
-.helpcard li::before{content:"→";position:absolute;left:-20px;color:var(--info);font-weight:bold;}
-.helpcard svg{width:50px;height:50px;margin:0 auto 15px;display:block;}
-.helpcard button{margin-top:18px;padding:10px 16px;
-  border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.1);
-  color:#fff;font-weight:900;cursor:pointer;}
 .msg{padding:12px;border-radius:10px;margin-bottom:15px;font-size:0.9rem;border:1px solid rgba(255,255,255,0.15);}
 .msg.err{background:rgba(255,107,129,0.15);color:var(--err);border-color:var(--err);}
 .msg.info{background:rgba(255,179,71,0.15);color:var(--info);border-color:var(--info);}
 </style>
 </head>
-<body>
+<body style="background-image:url('/assets/images/loginbg.png')">
 <div class="backdrop">
   <div class="shell">
     <div class="card">
-      <button type="button" class="helpbtn" id="helpbtn">?</button>
+      <a class="helpbtn" href="/Handleiding-Inloggen-Porbeheer.pdf" target="_blank" rel="noopener noreferrer" title="Handleiding inloggen (PDF)">?</a>
 
-      <h1>POP Zevenaar</h1>
+      <h1>POR Zevenaar</h1>
       <div class="sub">Veilig inloggen met wachtwoord en 2FA</div>
 
       <?php if($err):?><div class="msg err"><?=h($err)?></div><?php endif;?>
@@ -367,33 +348,5 @@ input:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0
   </div>
 </div>
 
-<div class="helpoverlay" id="helpbox">
-  <div class="helpcard">
-    <h3>Zo werkt het inloggen</h3>
-    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <rect x="16" y="8" width="32" height="48" rx="6" stroke="var(--info)" stroke-width="3" fill="none"/>
-      <circle cx="32" cy="52" r="2" fill="var(--info)"/>
-      <path d="M24 20h16v12H24z" stroke="var(--info)" stroke-width="2" fill="rgba(255,157,71,.15)"/>
-    </svg>
-    <p>Om de veiligheid te waarborgen gebruiken we Twee-Factor Authenticatie (2FA).</p>
-    <ul>
-      <li><strong>Stap 1:</strong> Log in met je e‑mailadres en wachtwoord.</li>
-      <li><strong>Stap 2:</strong> Open je Authenticator app (Google, Microsoft of 2FAS).</li>
-      <li><strong>Stap 3:</strong> Typ de 6-cijferige code over in het portaal.</li>
-      <li><strong>Nieuw?</strong> Na je eerste login word je begeleid bij het instellen van de app.</li>
-    </ul>
-    <p><small style="color:var(--warn)">Lukt het niet? Neem contact op met de beheerder voor een reset van je 2FA instellingen.</small></p>
-    <button type="button" id="helpclose">Sluiten</button>
-  </div>
-</div>
-
-<script>
-const hb=document.getElementById('helpbtn');
-const box=document.getElementById('helpbox');
-const close=document.getElementById('helpclose');
-hb?.addEventListener('click',()=>box.classList.add('active'));
-close?.addEventListener('click',()=>box.classList.remove('active'));
-box?.addEventListener('click',e=>{if(e.target===box)box.classList.remove('active');});
-</script>
 </body>
 </html>

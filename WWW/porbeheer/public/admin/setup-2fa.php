@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
+include __DIR__ . '/../assets/includes/header.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 
 requireLogin();
@@ -131,17 +132,12 @@ $csrf = csrfToken();
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Porbeheer - 2FA instellen</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
 :root{
-  --text:#fff; --muted:rgba(255,255,255,.78); --border:rgba(255,255,255,.22);
-  --glass:rgba(255,255,255,.12); --glass2:rgba(255,255,255,.06);
-  --shadow:0 14px 40px rgba(0,0,0,.45);
-  --ok:#7CFFB2; --err:#FF8DA1; --info:#9fd1ff;
-}
-body{
-  margin:0;font-family:Arial,sans-serif;color:var(--text);
-  background:url('<?= h($bg) ?>') no-repeat center center fixed;
-  background-size:cover;
+  --err: #FF8DA1;
+  --info: #9fd1ff;
+  --ok: #7CFFB2;
 }
 .backdrop{
   min-height:100vh;
@@ -247,7 +243,6 @@ h1,h2,h3{ margin-top:0; }
   letter-spacing:.10em;
   text-align:center;
 }
-.small{ color:var(--muted); font-size:13px; }
 label{ display:block; margin-top:12px; font-weight:800; }
 input{
   width:100%;
@@ -289,9 +284,19 @@ input{
   background:rgba(0,0,0,.16);
   border:1px solid rgba(255,255,255,.12);
 }
+.authcallout{
+  display:flex;
+  gap:14px;
+  align-items:flex-start;
+  margin:14px 0;
+  padding:14px;
+  border-radius:14px;
+  background:rgba(191,114,31,.18);
+  border:1px solid rgba(191,114,31,.45);
+}
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop">
   <div class="wrap">
 
@@ -321,11 +326,22 @@ input{
               <strong>Open een authenticator-app op je telefoon</strong>
               <div class="small">Bijvoorbeeld Google Authenticator, Microsoft Authenticator of 2FAS.</div>
 
-              <svg class="illus" viewBox="0 0 120 160" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <rect x="20" y="5" width="80" height="150" rx="14" fill="rgba(255,255,255,.10)" stroke="rgba(255,255,255,.25)"/>
-                <rect x="32" y="28" width="56" height="56" rx="10" fill="rgba(255,255,255,.16)"/>
-                <path d="M60 40v32M44 56h32" stroke="white" stroke-width="6" stroke-linecap="round"/>
-              </svg>
+              <div class="authcallout">
+                <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="width:44px;height:44px;flex-shrink:0;">
+                  <path d="M32 4 L56 14 V30 C56 45 46 55 32 60 C18 55 8 45 8 30 V14 Z" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.4)" stroke-width="2"/>
+                  <path d="M32 20a12 12 0 1 1 -8.5 3.5" stroke="white" stroke-width="4" stroke-linecap="round" fill="none"/>
+                  <path d="M32 14 l0 8 l6 0" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                </svg>
+                <div>
+                  <div style="font-weight:900;margin-bottom:8px;">Nog geen authenticator-app? Download er nu één:</div>
+                  <div class="row" style="margin-top:0;">
+                    <a class="btn" href="https://apps.apple.com/app/google-authenticator/id388497605" target="_blank" rel="noopener">📱 Download voor iPhone</a>
+                    <a class="btn" href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" rel="noopener">📱 Download voor Android</a>
+                  </div>
+                </div>
+              </div>
+
+              <img src="/assets/images/colorstar.png" alt="" class="illus">
             </div>
           </div>
 
@@ -335,11 +351,7 @@ input{
               <strong>Kies in de app: account toevoegen</strong>
               <div class="small">Meestal is dat een plusje <strong>+</strong> of de knop <strong>Scan QR-code</strong>.</div>
 
-              <svg class="illus" viewBox="0 0 120 160" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <rect x="20" y="5" width="80" height="150" rx="14" fill="rgba(255,255,255,.10)" stroke="rgba(255,255,255,.25)"/>
-                <circle cx="60" cy="65" r="26" fill="rgba(255,255,255,.16)"/>
-                <path d="M60 49v32M44 65h32" stroke="white" stroke-width="6" stroke-linecap="round"/>
-              </svg>
+              <img src="/assets/images/colorstar.png" alt="" class="illus">
             </div>
           </div>
 

@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID']);
+requireLogin();
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
@@ -14,34 +14,40 @@ $bg = themeImage('dashboard', $pdo);
 // Haal alle rollen van de gebruiker op uit user_roles tabel
 $userRoles = getUserRoles($pdo);
 
+// Weergavenaam voor "hoogste rol" -- bewust berekend uit dezelfde lijst als
+// de badges hieronder (niet uit het losse users.role-veld), zodat tekst en
+// badges nooit meer tegenstrijdig kunnen zijn.
+$rolePriorityDisplay = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'BESTUURSLID'=>4,'ADMIN'=>5,'BANDLID'=>0];
+$topRole = 'GEBRUIKER';
+$topPriority = 0;
+foreach ($userRoles as $ur) {
+    $p = $rolePriorityDisplay[$ur] ?? 0;
+    if ($p > $topPriority) { $topPriority = $p; $topRole = $ur; }
+}
+
 $tiles = [
-    ['title'=>'Bands',               'href'=>'/admin/bands.php',      'roles'=>['ADMIN','BEHEER']],
-    ['title'=>'Planning',            'href'=>'/admin/planning.php',   'roles'=>['ADMIN','BEHEER']],
-    ['title'=>'Sleutels en Kasten',  'href'=>'/admin/keys.php',       'roles'=>['ADMIN','BEHEER']],
-    ['title'=>'Financiën',           'href'=>'/admin/finance.php',    'roles'=>['ADMIN','FINANCIEEL']],
-    ['title'=>'Contacten',           'href'=>'/admin/contacts.php',   'roles'=>['ADMIN','BEHEER','FINANCIEEL']],
-  /*  ['title'=>'Bestuurszaken',       'href'=>'/admin/board.php',      'roles'=>['ADMIN','BESTUURSLID']],*/
-    ['title'=>'Admin',               'href'=>'/admin/beheer.php',     'roles'=>['ADMIN']],
-    ['title'=>'Help',                'href'=>'/admin/help.php',       'roles'=>['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID']],
-    ['title'=>'Uitloggen',           'href'=>'/logout.php',           'roles'=>['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID']],
+    ['title'=>'Bands',               'href'=>'/admin/bands.php',      'section'=>'bands'],
+    ['title'=>'Planning',            'href'=>'/admin/planning.php',   'section'=>'planning'],
+    ['title'=>'Sleutels en Kasten',  'href'=>'/admin/keys.php',       'section'=>'sleutels'],
+    ['title'=>'Financiën',           'href'=>'/admin/finance.php',    'section'=>'financien'],
+    ['title'=>'Contacten',           'href'=>'/admin/contacts.php',   'section'=>'contacten'],
+    ['title'=>'Admin',               'href'=>'/admin/beheer.php',     'section'=>'admin'],
+    ['title'=>'Help',                'href'=>'/assets/Handleiding_B.pdf', 'target'=>'_blank', 'section'=>null],
+    ['title'=>'Uitloggen',           'href'=>'/logout.php',           'section'=>null],
 ];
 
-// Aangepaste functie die checkt of gebruiker één van de benodigde rollen heeft
-function allowedTile(array $tile, array $userRoles): bool {
-    foreach ($tile['roles'] as $requiredRole) {
-        if (in_array($requiredRole, $userRoles, true)) {
-            return true;
-        }
+// Een tegel zonder onderdeel (Help/Uitloggen) staat voor iedere ingelogde
+// gebruiker open. Anders: minimaal leesrecht op dat onderdeel nodig.
+function allowedTile(PDO $pdo, array $tile): bool {
+    if ($tile['section'] === null) {
+        return true;
     }
-    return false;
+    return hasSectionAccess($pdo, $tile['section'], 'read');
 }
 
 auditLog($pdo, 'PAGE_VIEW', 'admin/dashboard.php');
 
 // Helper functie voor debug (optioneel, kan verwijderd worden)
-function h(?string $v): string {
-    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-}
 ?>
 <!DOCTYPE html>
 <html lang="nl">
@@ -49,91 +55,27 @@ function h(?string $v): string {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Porbeheer - Dashboard</title>
+    <link rel="stylesheet" href="/assets/css/main.css">
     <style>
-        :root {
-            --text: #fff;
-            --muted: rgba(255,255,255,.78);
-            --border: rgba(255,255,255,.22);
-            --glass: rgba(255,255,255,.12);
-            --glass2: rgba(255,255,255,.06);
-            --shadow: 0 14px 40px rgba(0,0,0,.45);
-        }
-
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            color: var(--text);
-            background: url('<?= h($bg) ?>') no-repeat center center fixed;
-            background-size: cover;
-        }
-
-        .backdrop {
-            min-height: 100vh;
-            background: radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)), linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-            padding: 26px;
-            box-sizing: border-box;
-            display: flex;
-            justify-content: center;
-        }
-
-        .wrap {
-            width: min(1200px, 96vw);
-        }
-
-        .topbar {
-            display: flex;
-            align-items: flex-end;
-            justify-content: space-between;
-            gap: 16px;
-            flex-wrap: wrap;
-            margin-bottom: 14px;
-        }
-
-        .brand h1 {
-            margin: 0;
-            font-size: 28px;
-            letter-spacing: .5px;
-        }
-
-        .brand .sub {
-            margin-top: 6px;
-            color: var(--muted);
-            font-size: 14px;
-        }
-
-        .userbox {
-            background: var(--glass);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 12px 14px;
-            box-shadow: var(--shadow);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            min-width: 260px;
-        }
-
-        .userbox .line1 {
-            font-weight: bold;
-        }
-
-        .userbox .line2 {
-            color: var(--muted);
-            margin-top: 4px;
-            font-size: 13px;
-        }
-
         .userbox .line2 {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-top: 4px;
-            font-size: 13px;
-            color: var(--muted);
         }
 
         .userbox .navright {
             text-align: right;
             white-space: nowrap;
+        }
+
+        .userbox a {
+            color: #fff;
+            font-weight: bold;
+            text-decoration: none;
+        }
+
+        .userbox a:hover {
+            text-decoration: underline;
         }
 
         .roles-badge {
@@ -155,17 +97,6 @@ function h(?string $v): string {
         .badge.primary {
             background: rgba(255,216,107,.3);
             border: 1px solid rgba(255,216,107,.5);
-        }
-
-        .panel {
-            margin-top: 10px;
-            border-radius: 20px;
-            border: 1px solid rgba(255,255,255,.18);
-            background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));
-            box-shadow: var(--shadow);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            padding: 18px;
         }
 
         .grid {
@@ -231,50 +162,25 @@ function h(?string $v): string {
             background: radial-gradient(circle at 20% 30%, rgba(255,255,255,.22), transparent 45%);
             transform: rotate(12deg);
         }
-
-        a {
-            color: #fff;
-            text-decoration: none;
-            transition: color .15s ease;
-        }
-
-        a:hover {
-            color: #ffd9b3;
-        }
-
-        a:visited {
-            color: #ffe0c2;
-        }
-
-        .userbox a {
-            color: #fff;
-            font-weight: bold;
-            text-decoration: none;
-        }
-
-        .userbox a:hover {
-            text-decoration: underline;
-        }
     </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop">
     <div class="wrap">
         <div class="topbar">
             <div class="brand">
-                <h1>Porbeheer</h1>
+                <h1><a href="/admin/dashboard.php">Porbeheer</a></h1>
                 <div class="sub">POP Oefenruimte Zevenaar • beheer & planning</div>
             </div>
 
             <div class="userbox">
                 <div class="line1">
-                    Hallo <a href="/admin/account.php"><?= h($user['username'] ?? '') ?></a> ·
-                    Primaire rol: <?= h($role) ?>
+                    Hallo <a href="/admin/account.php"><?= h(($user['first_name'] ?? '') !== '' ? $user['first_name'] : ($user['username'] ?? '')) ?></a>
                 </div>
 
                 <div class="roles-badge">
                     <?php foreach ($userRoles as $userRole): ?>
-                        <span class="badge <?= $userRole === $role ? 'primary' : '' ?>">
+                        <span class="badge <?= $userRole === $topRole ? 'primary' : '' ?>">
                             <?= h($userRole) ?>
                         </span>
                     <?php endforeach; ?>
@@ -282,8 +188,7 @@ function h(?string $v): string {
 
                 <div class="line2">
                     <div class="navleft">
-                        <a href="/admin/dashboard.php">Dashboard</a> •
-                        <a href="/logout.php">Uitloggen</a>
+                        <a href="/admin/dashboard.php">Dashboard</a> <a href="/logout.php">Uitloggen</a>
                     </div>
 
                     <div class="navright">
@@ -297,11 +202,13 @@ function h(?string $v): string {
             <div class="grid">
                 <?php foreach ($tiles as $tile): ?>
                     <?php
-                    $allowed = allowedTile($tile, $userRoles);
+                    $allowed = allowedTile($pdo, $tile);
                     $cls = $allowed ? 'tile' : 'tile disabled';
+                    $tip = $allowed ? '' : ' title="Je hebt hier geen toegang toe"';
                     $href = $allowed ? $tile['href'] : '#';
+                    $target = ($allowed && !empty($tile['target'])) ? ' target="' . h($tile['target']) . '"' : '';
                     ?>
-                    <a class="<?= $cls ?>" href="<?= h($href) ?>">
+                    <a class="<?= $cls ?>" href="<?= h($href) ?>" <?= $target ?><?= $tip ?>>
                         <?= h($tile['title']) ?>
                     </a>
                 <?php endforeach; ?>

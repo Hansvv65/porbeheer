@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/mail.php';
+include __DIR__ . '/assets/includes/header.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
@@ -17,32 +18,6 @@ header('Expires: 0');
 if (isLoggedIn()) {
     header('Location: /admin/dashboard.php');
     exit;
-}
-
-function h(?string $v): string
-{
-    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-}
-
-function mailLayout(string $title, string $intro, string $contentHtml): string
-{
-    return '
-    <div style="margin:0;padding:24px;background:#f4f7fb;font-family:Arial,sans-serif;color:#243447;">
-      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);">
-        <div style="padding:18px 24px;background:linear-gradient(180deg,#eef6ff,#e6f0fb);border-bottom:1px solid #d9e2ec;">
-          <div style="font-size:22px;font-weight:700;color:#1f3b57;">Porbeheer</div>
-          <div style="margin-top:4px;font-size:13px;color:#5b7083;">POP Oefenruimte Zevenaar</div>
-        </div>
-        <div style="padding:28px 24px;">
-          <h2 style="margin:0 0 12px 0;font-size:22px;color:#1f3b57;">' . h($title) . '</h2>
-          <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#425466;">' . h($intro) . '</p>
-          <div style="font-size:15px;line-height:1.7;color:#243447;">' . $contentHtml . '</div>
-        </div>
-        <div style="padding:16px 24px;background:#f8fbff;border-top:1px solid #d9e2ec;font-size:12px;color:#6b7c93;">
-          Dit is een automatisch bericht van Porbeheer.
-        </div>
-      </div>
-    </div>';
 }
 
 $errors = [];
@@ -66,6 +41,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Wachtwoorden komen niet overeen.';
     }
 
+    if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $chkUser = $pdo->prepare("SELECT id FROM users WHERE email = ? AND deleted_at IS NULL");
+        $chkUser->execute([$email]);
+        if ($chkUser->fetchColumn()) {
+            $errors[] = 'Er bestaat al een account met dit e-mailadres. Ben je het wachtwoord vergeten? Gebruik "wachtwoord vergeten".';
+        }
+    }
+
     if (!$errors) {
         try {
             $hash = password_hash($password, PASSWORD_DEFAULT);
@@ -75,13 +58,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Gebruik e‑mailadres als gebruikersnaam (username) voor backward compatibiliteit
             $username = $email;
 
+            // Matchen met een bestaand contact op e-mailadres: voorkomt een los,
+            // ongekoppeld account voor iemand die al als contact bekend is (bijv.
+            // een bandlid dat al eerder is opgevoerd bij zijn band).
+            $matchedContactId = null;
+            $chkContact = $pdo->prepare("SELECT id, name FROM contacts WHERE email = ? AND deleted_at IS NULL");
+            $chkContact->execute([$email]);
+            $matchedContact = $chkContact->fetch(PDO::FETCH_ASSOC);
+            if ($matchedContact) {
+                $matchedContactId = (int)$matchedContact['id'];
+            }
+
             $st = $pdo->prepare("
                 INSERT INTO users
-                    (username, email, password_hash, role, status, active, created_at, updated_at)
+                    (username, email, password_hash, role, status, active, contact_id, created_at, updated_at)
                 VALUES
-                    (?, ?, ?, 'GEBRUIKER', 'PENDING', 1, NOW(), NOW())
+                    (?, ?, ?, 'GEBRUIKER', 'PENDING', 1, ?, NOW(), NOW())
             ");
-            $st->execute([$username, $email, $hash]);
+            $st->execute([$username, $email, $hash, $matchedContactId]);
             $uid = (int)$pdo->lastInsertId();
 
             // Token genereren (zelfde methode als in login.php voor consistentie)
@@ -95,6 +89,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 SET verification_token = ?, verification_expires = ?, updated_at = NOW()
                 WHERE id = ?
             ")->execute([$tokenHash, $exp, $uid]);
+
+            // Los token voor snelle goedkeuring door de admin vanuit de meldingsmail.
+            // Bewust een aparte token/kolom dan verification_token hierboven: dit
+            // token keurt het account goed (admin-actie), dat token bevestigt het
+            // e-mailadres (actie van de aanmelder zelf) -- verschillende dingen.
+            $approveToken = bin2hex(random_bytes(32));
+            $approveTokenHash = password_hash($approveToken, PASSWORD_DEFAULT);
+            $approveExp = (new DateTime('+4 days'))->format('Y-m-d H:i:s');
+            $pdo->prepare("
+                UPDATE users
+                SET approve_token_hash = ?, approve_expires_at = ?
+                WHERE id = ?
+            ")->execute([$approveTokenHash, $approveExp, $uid]);
+            $approveLink = appUrl("/admin/quick_approve.php?id=" . $uid . "&token=" . $approveToken);
+
+            $matchedBandName = null;
+            if ($matchedContactId) {
+                $mb = $pdo->prepare("
+                    SELECT name FROM bands
+                    WHERE (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL
+                    LIMIT 1
+                ");
+                $mb->execute([$matchedContactId, $matchedContactId]);
+                $matchedBandName = $mb->fetchColumn() ?: null;
+            }
 
             $pdo->commit();
 
@@ -111,6 +130,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <p style="margin:0 0 14px 0;">
                   Je account is aangemaakt, maar nog niet actief.
                 </p>
+' . ($matchedContact ? '
+                <p style="margin:0 0 14px 0;background:#eef8ee;border:1px solid #b8e0b8;border-radius:8px;padding:10px 12px;">
+                  ✅ We hebben je gekoppeld aan het bestaande contact <strong>' . h((string)$matchedContact['name']) . '</strong>' . ($matchedBandName ? ' (bandlid van <strong>' . h((string)$matchedBandName) . '</strong>)' : '') . '.
+                </p>
+' : '') . '
 
                 <p style="margin:0 0 14px 0;">
                   Stap 1: bevestig eerst je e‑mailadres via onderstaande knop.
@@ -139,6 +163,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Gebruik dezelfde mailfunctie als in login.php (sendMail)
             sendMail($email, 'Bevestig je aanmelding (Porbeheer)', $html);
+
+            // Beheerder informeren over de nieuwe aanmelding, zodat deze goedgekeurd kan worden.
+            // Gaat naar iedereen met de rol ADMIN of BEHEER (niet meer hardcoded naar
+            // één persoon) -- alleen ADMIN kan daadwerkelijk goedkeuren, BEHEER krijgt
+            // 'm ook omdat die rol qua naam en taak het dichtst bij "beheerder" ligt.
+            try {
+                $adminRecipients = $pdo->query("
+                    SELECT DISTINCT u.email, u.username
+                    FROM users u
+                    JOIN user_roles ur ON ur.user_id = u.id
+                    WHERE ur.role IN ('ADMIN','BEHEER')
+                      AND u.status = 'ACTIVE'
+                      AND u.deleted_at IS NULL
+                      AND u.email IS NOT NULL AND u.email <> ''
+                    ORDER BY u.username
+                ")->fetchAll(PDO::FETCH_ASSOC);
+
+                $recipientNamesText = $adminRecipients
+                    ? implode(', ', array_map(static fn($r) => (string)$r['username'], $adminRecipients))
+                    : '';
+
+                $adminHtml = mailLayout(
+                    'Nieuwe aanmelding',
+                    'Er heeft zich zojuist iemand aangemeld voor Porbeheer.',
+                    '
+                    <p style="margin:0 0 14px 0;">Hoi,</p>
+
+                    <p style="margin:0 0 14px 0;">
+                      Er is een nieuwe accountaanvraag binnengekomen:
+                    </p>
+
+                    <p style="margin:0 0 14px 0;">
+                      <strong>E‑mail:</strong> ' . h($email) . '<br>
+                      <strong>Aangevraagd op:</strong> ' . h((new DateTime())->format('d-m-Y H:i')) . '
+                    </p>
+' . ($matchedContact ? '
+                    <p style="margin:0 0 14px 0;background:#eef8ee;border:1px solid #b8e0b8;border-radius:8px;padding:10px 12px;">
+                      ✅ Automatisch gekoppeld aan bestaand contact: <strong>' . h((string)$matchedContact['name']) . '</strong> (op basis van e-mailadres).
+                    </p>
+' : '') . '
+                    <p style="margin:0 0 14px 0;">
+                      Het account staat op status <strong>PENDING</strong> en wacht nog op jouw goedkeuring
+                      (de gebruiker moet eerst zelf nog het e‑mailadres bevestigen).
+                    </p>
+
+                    <p style="margin:18px 0;">
+                      <a href="' . h($approveLink) . '" style="display:inline-block;padding:12px 18px;background:#2e7d32;border-radius:10px;color:#ffffff;text-decoration:none;font-weight:700;">
+                        Goed- of afkeuren
+                      </a>
+                    </p>
+
+                    <p style="margin:0;font-size:12px;color:#6b7c93;">
+                      Deze link is 4 dagen geldig en werkt zonder in te loggen; je krijgt eerst nog een bevestigingsscherm te zien.
+                    </p>
+' . ($recipientNamesText !== '' ? '
+                    <p style="margin:16px 0 0 0;font-size:12px;color:#6b7c93;">
+                      Deze melding is verstuurd naar alle beheerders: ' . h($recipientNamesText) . '.
+                    </p>
+' : '') . '
+                    '
+                );
+
+                foreach ($adminRecipients as $recipient) {
+                    sendMail(
+                        (string)$recipient['email'],
+                        '🚨🚨 Nieuwe aanmelding Porbeheer – goedkeuring vereist 🚨🚨',
+                        $adminHtml
+                    );
+                }
+            } catch (Throwable $e) {
+                // Het mislukken van deze notificatie mag de aanmelding van de gebruiker niet blokkeren.
+                auditLog($pdo, 'REGISTER_ADMIN_NOTIFY_FAIL', 'auth/register', [
+                    'email' => $email,
+                    'error' => substr($e->getMessage(), 0, 200),
+                ]);
+            }
 
             auditLog($pdo, 'REGISTER_OK', 'auth/register', [
                 'email'    => $email,
@@ -169,16 +269,12 @@ $csrf = csrfToken();
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - Aanmelden</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
 :root{
-  --text:#fff; --muted:rgba(255,255,255,.78); --border:rgba(255,255,255,.22);
-  --glass:rgba(255,255,255,.12); --glass2:rgba(255,255,255,.06); --info:#bf721f;
-  --shadow:0 14px 40px rgba(0,0,0,.45); --ok:#7CFFB2; --err:#FF8DA1;
-}
-body{
-  margin:0;font-family:Arial,sans-serif;color:var(--text);
-  background:url('/assets/images/loginbg.png') no-repeat center center fixed;
-  background-size:cover;
+  --err: #FF8DA1;
+  --info: #bf721f;
+  --ok: #7CFFB2;
 }
 .backdrop{
   min-height:100vh;display:flex;align-items:center;justify-content:center;
@@ -238,10 +334,9 @@ a:hover{text-decoration:underline;filter:brightness(1.2);}
   display:flex;align-items:center;justify-content:center;
   font-weight:900;font-size:18px;background:var(--info);color:#fff;
 }
-.small{ font-size:13px; color:var(--muted); }
 </style>
 </head>
-<body>
+<body style="background-image:url('/assets/images/loginbg.png')">
 <div class="backdrop">
   <div class="wrap">
 

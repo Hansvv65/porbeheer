@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
-include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN']); // Alleen ADMIN mag echt verwijderen
+requireSectionAccess('contacten', 'write');
+requireSectionAccess('admin', 'write'); // Alleen ADMIN mag echt verwijderen
 
 $user = currentUser();
 $bg = themeImage('contacts', $pdo);

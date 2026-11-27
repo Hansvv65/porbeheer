@@ -3,16 +3,15 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
-include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('contacten', 'write');
+if (hasOwnOnlySectionAccess($pdo, 'contacten')) {
+    renderNoAccessPage('contacten');
+}
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
-
-
-function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
 $id = (int)($_POST['id'] ?? 0);
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || $id <= 0) {

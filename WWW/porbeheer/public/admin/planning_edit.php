@@ -17,16 +17,13 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/mail.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN','BEHEER']);
+requireSectionAccess('planning', 'write');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('schedule', $pdo);
 
 /* ========== Helpers ========== */
-function h(?string $v): string {
-    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-}
 
 function getSetting(PDO $pdo, string $key, string $default = ''): string {
     $st = $pdo->prepare("SELECT `value` FROM app_settings WHERE `key`=? LIMIT 1");
@@ -76,6 +73,22 @@ try {
 $contractSlot = null;
 $contractNote = null;
 
+// Own-only (bandlid): mag alleen zijn eigen band(en) zien/bewerken in dit
+// scherm, niet de hele planning. Eén keer berekend, hergebruikt bij zowel
+// het laden (hieronder) als het opslaan (in de POST-verwerking verderop).
+$isOwnOnlyPlanning = hasOwnOnlySectionAccess($pdo, 'planning');
+$myBandIds = [];
+if ($isOwnOnlyPlanning) {
+    $myContactId = currentContactId();
+    if ($myContactId !== null) {
+        $mb = $pdo->prepare("SELECT id FROM bands WHERE (primary_contact_id = ? OR secondary_contact_id = ?) AND deleted_at IS NULL");
+        $mb->execute([$myContactId, $myContactId]);
+        $myBandIds = array_map('intval', $mb->fetchAll(PDO::FETCH_COLUMN));
+    }
+    // Dropdown zelf ook beperken tot eigen band(en) -- niet alleen bij opslaan blokkeren.
+    $bands = array_values(array_filter($bands, fn($b) => in_array((int)$b['id'], $myBandIds, true)));
+}
+
 // Huidige/default waardes ophalen
 if ($isEdit) {
     $st = $pdo->prepare("
@@ -89,6 +102,9 @@ if ($isEdit) {
     if (!$row) {
         header('Location: /admin/planning.php');
         exit;
+    }
+    if ($isOwnOnlyPlanning && !in_array((int)$row['band_id'], $myBandIds, true)) {
+        renderNoAccessPage('planning');
     }
 } else {
     $row = [
@@ -117,6 +133,22 @@ if ($isEdit) {
                 $contractNote = "Dit dagdeel is automatisch bezet via contract: " . $contractSlot['band_name'] . ".";
             }
         }
+    }
+}
+
+// Own-only (bandlid): is het huidige/gekozen dagdeel voor deze rol toegestaan
+// om te boeken? Doordeweeks (ma-vrij) alleen avond, weekend (za/zo) alles.
+// Ook geblokkeerd als het dagdeel al via een contract van een ANDERE band
+// bezet is. Alleen relevant bij het aanmaken van een nieuwe boeking --
+// bestaande eigen boekingen mag je altijd nog annuleren, ongeacht dit dagdeel.
+$bandlidSlotNotBookable = false;
+if ($isOwnOnlyPlanning && !$isEdit && $row['date'] !== '' && in_array($row['timeslot'], ['OCHTEND', 'MIDDAG', 'AVOND'], true)) {
+    $slotWeekday = (int)(new DateTimeImmutable($row['date']))->format('N'); // 1=ma ... 7=zo
+    if ($slotWeekday <= 5 && $row['timeslot'] !== 'AVOND') {
+        $bandlidSlotNotBookable = true;
+    }
+    if ($contractSlot && !in_array((int)$contractSlot['band_id'], $myBandIds, true)) {
+        $bandlidSlotNotBookable = true;
     }
 }
 
@@ -209,32 +241,16 @@ function sendMailToBoardMembers(PDO $pdo, array $oldData, array $newData, string
     }
 
     $subject = "Planning gewijzigd - Porbeheer";
-    $contentHtml = "
-    <div style=\"margin:0;padding:24px;background:#f4f7fb;font-family:Arial,sans-serif;color:#243447;\">
-      <div style=\"max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);\">
-        <div style=\"padding:18px 24px;background:linear-gradient(180deg,#eef6ff,#e6f0fb);border-bottom:1px solid #d9e2ec;\">
-          <div style=\"font-size:22px;font-weight:700;color:#1f3b57;\">Porbeheer</div>
-          <div style=\"margin-top:4px;font-size:13px;color:#5b7083;\">POP Oefenruimte Zevenaar</div>
-        </div>
-        <div style=\"padding:28px 24px;\">
-          <h2 style=\"margin:0 0 12px 0;font-size:22px;color:#1f3b57;\">Boeking {$actionText}</h2>
-          <p style=\"margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#425466;\">
-            Door: <strong>".htmlspecialchars($changedBy)."</strong>
-          </p>
-          <div style=\"font-size:15px;line-height:1.7;color:#243447;\">
-            {$detailsHtml}
-            <p style=\"margin-top:20px;\">
-              <a href=\"".appUrl('/admin/planning.php')."\" style=\"display:inline-block;padding:12px 18px;background:#dfefff;border:1px solid #bdd3ea;border-radius:10px;color:#1f3b57;text-decoration:none;font-weight:700;\">
+    $contentHtml = mailLayout(
+        "Boeking {$actionText}",
+        'Door: ' . $changedBy,
+        $detailsHtml . '
+            <p style="margin-top:20px;">
+              <a href="' . h(appUrl('/admin/planning.php')) . '" style="display:inline-block;padding:12px 18px;background:#dfefff;border:1px solid #bdd3ea;border-radius:10px;color:#1f3b57;text-decoration:none;font-weight:700;">
                 → Bekijk volledige planning
               </a>
-            </p>
-          </div>
-        </div>
-        <div style=\"padding:16px 24px;background:#f8fbff;border-top:1px solid #d9e2ec;font-size:12px;color:#6b7c93;\">
-          Dit is een automatisch bericht van Porbeheer.
-        </div>
-      </div>
-    </div>";
+            </p>'
+    );
 
     foreach ($boardMembers as $member) {
         try {
@@ -309,32 +325,16 @@ function sendMailToBandContacts(PDO $pdo, array $newData, string $action, string
         </ul>";
 
     $subject = "Bevestiging boeking - " . htmlspecialchars($bandName) . " - Porbeheer";
-    $contentHtml = "
-    <div style=\"margin:0;padding:24px;background:#f4f7fb;font-family:Arial,sans-serif;color:#243447;\">
-      <div style=\"max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);\">
-        <div style=\"padding:18px 24px;background:linear-gradient(180deg,#eef6ff,#e6f0fb);border-bottom:1px solid #d9e2ec;\">
-          <div style=\"font-size:22px;font-weight:700;color:#1f3b57;\">Porbeheer</div>
-          <div style=\"margin-top:4px;font-size:13px;color:#5b7083;\">POP Oefenruimte Zevenaar</div>
-        </div>
-        <div style=\"padding:28px 24px;\">
-          <h2 style=\"margin:0 0 12px 0;font-size:22px;color:#1f3b57;\">Boeking {$actionText}</h2>
-          <p style=\"margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#425466;\">
-            Gewijzigd door: <strong>".htmlspecialchars($changedBy)."</strong>
-          </p>
-          <div style=\"font-size:15px;line-height:1.7;color:#243447;\">
-            {$detailsHtml}
-            <p style=\"margin-top:20px;\">
-              <a href=\"".appUrl('/admin/planning.php')."\" style=\"display:inline-block;padding:12px 18px;background:#dfefff;border:1px solid #bdd3ea;border-radius:10px;color:#1f3b57;text-decoration:none;font-weight:700;\">
+    $contentHtml = mailLayout(
+        "Boeking {$actionText}",
+        'Gewijzigd door: ' . $changedBy,
+        $detailsHtml . '
+            <p style="margin-top:20px;">
+              <a href="' . h(appUrl('/admin/planning.php')) . '" style="display:inline-block;padding:12px 18px;background:#dfefff;border:1px solid #bdd3ea;border-radius:10px;color:#1f3b57;text-decoration:none;font-weight:700;">
                 → Bekijk planning
               </a>
-            </p>
-          </div>
-        </div>
-        <div style=\"padding:16px 24px;background:#f8fbff;border-top:1px solid #d9e2ec;font-size:12px;color:#6b7c93;\">
-          Dit is een automatisch bericht van Porbeheer.
-        </div>
-      </div>
-    </div>";
+            </p>'
+    );
 
     foreach ($contacts as $contact) {
         try {
@@ -357,8 +357,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $date     = (string)($_POST['date'] ?? '');
     $timeslot = (string)($_POST['timeslot'] ?? '');
     $bandId   = (int)($_POST['band_id'] ?? 0);
-    $sendMailBoard    = isset($_POST['send_mail_to_board']) && $_POST['send_mail_to_board'] === '1';
-    $sendMailContacts = isset($_POST['send_mail_to_contacts']) && $_POST['send_mail_to_contacts'] === '1';
+    $sendMailBoard    = $isOwnOnlyPlanning || (isset($_POST['send_mail_to_board']) && $_POST['send_mail_to_board'] === '1');
+    $sendMailContacts = $isOwnOnlyPlanning || (isset($_POST['send_mail_to_contacts']) && $_POST['send_mail_to_contacts'] === '1');
+
+    // Own-only afdwingen (bandlid): mag alleen boekingen van zijn eigen
+    // band(en) aanmaken/wijzigen/verwijderen, niet de hele planning. De
+    // sectie-rechten zelf (requireSectionAccess hierboven) staan 'write'
+    // toe, maar dat betekent voor deze rol dus 'alleen eigen band(en)'.
+    if ($isOwnOnlyPlanning) {
+        $targetOk = ($bandId <= 0) || in_array($bandId, $myBandIds, true);
+        $existingOk = !$isEdit || in_array((int)($row['band_id'] ?? 0), $myBandIds, true);
+
+        // Dag/dagdeel-regel: doordeweeks (ma-vrij) mag een bandlid alleen de
+        // avond boeken, overdag (ochtend/middag) is voorbehouden aan
+        // admin/beheer. In het weekend (za/zo) mag elk vrij dagdeel geboekt
+        // worden. Geldt voor het NIEUWE dagdeel bij aanmaken of verplaatsen;
+        // niet van toepassing bij annuleren (band_id <= 0, geen nieuw dagdeel).
+        $slotTimeOk = true;
+        if ($bandId > 0 && $date !== '' && in_array($timeslot, ['OCHTEND', 'MIDDAG', 'AVOND'], true)) {
+            $weekday = (int)(new DateTimeImmutable($date))->format('N'); // 1=ma ... 7=zo
+            if ($weekday <= 5 && $timeslot !== 'AVOND') {
+                $slotTimeOk = false;
+            }
+        }
+
+        // Contractbezetting: dit dagdeel kan ook (zonder een schedule-rij)
+        // al "bezet" zijn via een contract van een ANDERE band. Een
+        // handmatige boeking daaroverheen zou dat contract overschrijven --
+        // dat mag een bandlid niet doen, alleen voor eigen band(en).
+        $contractOk = true;
+        if ($bandId > 0 && $hasContractEvents && $date !== '' && in_array($timeslot, ['OCHTEND', 'MIDDAG', 'AVOND'], true)) {
+            $ce = $pdo->prepare("SELECT band_id FROM band_planner_events WHERE event_date = ? AND daypart = ? LIMIT 1");
+            $ce->execute([$date, $timeslot]);
+            $contractBandId = $ce->fetchColumn();
+            if ($contractBandId !== false && !in_array((int)$contractBandId, $myBandIds, true)) {
+                $contractOk = false;
+            }
+        }
+
+        if (empty($myBandIds) || !$targetOk || !$existingOk || !$slotTimeOk || !$contractOk) {
+            renderNoAccessPage('planning');
+        }
+    }
 
     // Tijden
     $startTime = !empty($_POST['start_time']) ? (string)$_POST['start_time'] : null;
@@ -506,18 +546,12 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/planning_edit.php'.($isEdit ? " id=$id" : '')
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Planning wijzigen</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--border:rgba(255,255,255,.22);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);background:url('<?= h($bg) ?>') no-repeat center center fixed;background-size:cover;}
-.backdrop{min-height:100vh;background:radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)),linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));padding:26px;box-sizing:border-box;display:flex;justify-content:center;}
 .wrap{width:min(900px,96vw);}
 .panel{margin-top:10px;border-radius:20px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));box-shadow:var(--shadow);backdrop-filter:blur(12px);padding:18px;}
-.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px;}
 .brand h1{margin:0;font-size:26px}
-.brand .sub{margin-top:6px;color:var(--muted);font-size:14px}
 .userbox{background:var(--glass);border:1px solid var(--border);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow);backdrop-filter:blur(10px);min-width:260px;}
-.userbox .line1{font-weight:bold}
-.userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
 .userbox a{color:#fff;text-decoration:none}
 .userbox a:hover{color:#ffd9b3}
 label{display:block;margin-top:12px}
@@ -530,18 +564,14 @@ input:focus,select:focus{border-color:rgba(255,255,255,.35);box-shadow:0 0 0 2px
 .checkbox-label input{width:auto;margin-top:0;transform:scale(1.1);cursor:pointer;background:transparent;border:1px solid var(--border);}
 .checkbox-label span{font-weight:normal;font-size:14px;color:rgba(255,255,255,.9);}
 .msg{margin-top:12px;font-size:13px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08)}
-.err{color:#ffb3b3}
 .info{color:rgba(255,255,255,.92)}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:720px){.row{grid-template-columns:1fr}}
-a{color:#fff;text-decoration:none;transition:color .15s ease}
-a:hover{color:#ffd9b3}
-a:visited{color:#ffe0c2}
 .mail-hint{font-size:12px;color:rgba(255,255,255,.6);margin-top:4px;margin-left:28px;}
 .hint-text{font-size:12px;color:rgba(255,255,255,.5);margin-top:4px;}
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop">
   <div class="wrap">
 
@@ -553,9 +583,7 @@ a:visited{color:#ffe0c2}
       <div class="userbox">
         <div class="line1"><?= h($user['username'] ?? '') ?> · <?= h($role) ?></div>
         <div class="line2">
-          <a href="/admin/dashboard.php">Dashboard</a> •
-          <a href="/admin/planning.php">Planning</a> •
-          <a href="/logout.php">Uitloggen</a>
+          <a href="/admin/dashboard.php">Dashboard</a> <a href="/admin/planning.php">Planning</a> <a href="/logout.php">Uitloggen</a>
         </div>
       </div>
     </div>
@@ -572,6 +600,17 @@ a:visited{color:#ffe0c2}
           <div style="margin-top:6px;color:rgba(255,255,255,.78);">
             Als je hieronder opslaat, maak je een <strong>handmatige boeking</strong> die vóórgaat op het contract.
           </div>
+        </div>
+      <?php endif; ?>
+
+      <?php if ($bandlidSlotNotBookable): ?>
+        <div class="msg err" style="margin-bottom:12px;">
+          <?php if ($contractSlot && !in_array((int)$contractSlot['band_id'], $myBandIds, true)): ?>
+            ⚠️ Dit dagdeel is al bezet via een contract van een andere band (<?= h((string)$contractSlot['band_name']) ?>). Je kunt dit dagdeel niet boeken.
+          <?php else: ?>
+            ⚠️ Dit dagdeel kun je niet zelf boeken: doordeweeks (ma t/m vrij) is overdag (ochtend/middag) voorbehouden aan beheer.
+            Kies een avonddagdeel doordeweeks, of een willekeurig dagdeel in het weekend.
+          <?php endif; ?>
         </div>
       <?php endif; ?>
 
@@ -628,21 +667,25 @@ a:visited{color:#ffe0c2}
           <?php endif; ?>
         </label>
 
-        <!-- Mail naar bestuur -->
-        <label class="checkbox-label">
-          <input type="checkbox" name="send_mail_to_board" value="1">
-          <span>📧 Stuur een e-mail naar het bestuur over deze wijziging</span>
-        </label>
-        <div class="mail-hint">Alleen bestuursleden met een geregistreerd e-mailadres ontvangen een notificatie.</div>
+        <?php if (!$isOwnOnlyPlanning): ?>
+          <!-- Mail naar bestuur -->
+          <label class="checkbox-label">
+            <input type="checkbox" name="send_mail_to_board" value="1">
+            <span>📧 Stuur een e-mail naar het bestuur over deze wijziging</span>
+          </label>
+          <div class="mail-hint">Alleen bestuursleden met een geregistreerd e-mailadres ontvangen een notificatie.</div>
 
-        <!-- Mail naar bandcontacten (nieuw) -->
-        <label class="checkbox-label" style="margin-top:8px;">
-          <input type="checkbox" name="send_mail_to_contacts" value="1">
-          <span>📧 Stuur bevestiging naar de contactpersonen van de band (indien e-mail bekend)</span>
-        </label>
-        <div class="mail-hint">De eerste en tweede contactpersoon uit de bandgegevens ontvangen een bericht.</div>
+          <!-- Mail naar bandcontacten (nieuw) -->
+          <label class="checkbox-label" style="margin-top:8px;">
+            <input type="checkbox" name="send_mail_to_contacts" value="1">
+            <span>📧 Stuur bevestiging naar de contactpersonen van de band (indien e-mail bekend)</span>
+          </label>
+          <div class="mail-hint">De eerste en tweede contactpersoon uit de bandgegevens ontvangen een bericht.</div>
+        <?php else: ?>
+          <div class="mail-hint" style="margin-top:8px;">📧 Het bestuur en jijzelf ontvangen automatisch een bevestiging van deze boeking per e-mail.</div>
+        <?php endif; ?>
 
-        <button class="btn" type="submit" name="do" value="save">Opslaan</button>
+        <button class="btn" type="submit" name="do" value="save" <?= $bandlidSlotNotBookable ? 'disabled' : '' ?>>Opslaan</button>
         <a class="btn" href="/admin/planning.php" style="margin-left:8px;">Annuleren</a>
       </form>
     </div>

@@ -6,33 +6,11 @@ require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/mail.php';
 include __DIR__ . '/../assets/includes/header.php';
 
-requireRole(['ADMIN']);
+requireSectionAccess('admin', 'write');
 
 $user = currentUser();
 $role = $user['role'] ?? 'GEBRUIKER';
 $bg = themeImage('contacts', $pdo);
-
-function h(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-
-function mailLayout(string $title, string $intro, string $contentHtml): string {
-    return '
-    <div style="margin:0;padding:24px;background:#f4f7fb;font-family:Arial,sans-serif;color:#243447;">
-      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);">
-        <div style="padding:18px 24px;background:linear-gradient(180deg,#eef6ff,#e6f0fb);border-bottom:1px solid #d9e2ec;">
-          <div style="font-size:22px;font-weight:700;color:#1f3b57;">Porbeheer</div>
-          <div style="margin-top:4px;font-size:13px;color:#5b7083;">POP Oefenruimte Zevenaar</div>
-        </div>
-        <div style="padding:28px 24px;">
-          <h2 style="margin:0 0 12px 0;font-size:22px;color:#1f3b57;">' . h($title) . '</h2>
-          <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#425466;">' . h($intro) . '</p>
-          <div style="font-size:15px;line-height:1.7;color:#243447;">' . $contentHtml . '</div>
-        </div>
-        <div style="padding:16px 24px;background:#f8fbff;border-top:1px solid #d9e2ec;font-size:12px;color:#6b7c93;">
-          Dit is een automatisch bericht van Porbeheer.
-        </div>
-      </div>
-    </div>';
-}
 
 // ========== HELPER FUNCTIES (niet in auth.php) ==========
 function loadUser(PDO $pdo, int $id): array {
@@ -56,18 +34,6 @@ function countAdmins(PDO $pdo): int {
     ")->fetchColumn();
 }
 
-function syncActiveWithStatus(PDO $pdo, int $id): void {
-    $pdo->prepare("
-        UPDATE users
-        SET active = CASE
-            WHEN deleted_at IS NOT NULL THEN 0
-            WHEN status = 'ACTIVE' THEN 1
-            ELSE 0
-        END
-        WHERE id = ?
-    ")->execute([$id]);
-}
-
 function computePrimaryRole(array $roles, array $priority): string {
     $primary = 'GEBRUIKER';
     foreach ($roles as $r) {
@@ -77,8 +43,8 @@ function computePrimaryRole(array $roles, array $priority): string {
 }
 // =====================================================
 
-$allowedRoles = ['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID'];
-$rolePriority = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'BESTUURSLID'=>4,'ADMIN'=>5];
+$allowedRoles = ['ADMIN','BEHEER','FINANCIEEL','GEBRUIKER','BESTUURSLID','BANDLID'];
+$rolePriority = ['GEBRUIKER'=>1,'FINANCIEEL'=>2,'BEHEER'=>3,'BESTUURSLID'=>4,'ADMIN'=>5,'BANDLID'=>0];
 
 $errors = [];
 $success = null;
@@ -174,7 +140,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             auditLog($pdo, 'USER_APPROVE', 'admin/users_detail.php', ['id'=>$id]);
             // Stuur eventueel mail (kort gehouden)
             if (!empty($target['email'])) {
-                $html = mailLayout('Aanmelding goedgekeurd', 'Je account is goedgekeurd.', '<p>Je kunt nu inloggen.</p>');
+                $loginLink = appUrl('/login.php');
+                $html = mailLayout('Aanmelding goedgekeurd', 'Je account is goedgekeurd.',
+                    '<p>Je kunt nu inloggen.</p><p style="margin-top:16px;"><a href="' . h($loginLink) . '" style="display:inline-block;padding:10px 20px;background:#bf721f;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;">Naar inloggen</a></p>'
+                );
                 sendEmail($target['email'], 'Je aanmelding is goedgekeurd', $html);
             }
         }
@@ -255,20 +224,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // 7. Primaire rol wijzigen (alleen als de gekozen rol in de rollenlijst zit)
-    if ($action === 'set_primary_role') {
+    // 6b. Contactkoppeling (los van rollen) -- bestuurslid loopt inmiddels
+    // volledig via de rol zelf (zie planning_edit.php's mailfunctie), dus
+    // dat losse vlaggetje is hier bewust weer weggehaald.
+    if ($action === 'set_extra') {
         if ($isDeleted) $errors[] = 'User is verwijderd. Herstel eerst.';
         else {
-            $newPrimary = (string)($_POST['primary_role'] ?? '');
-            if (!in_array($newPrimary, $allowedRoles, true)) {
-                $errors[] = 'Ongeldige primaire rol.';
-            } elseif (!in_array($newPrimary, $rolesNow, true)) {
-                $errors[] = 'Gebruiker heeft deze rol niet. Voeg de rol eerst toe.';
-            } else {
-                $pdo->prepare("UPDATE users SET role = ? WHERE id = ?")->execute([$newPrimary, $id]);
+            $contactIdRaw = trim((string)($_POST['contact_id'] ?? ''));
+            $newContactId = $contactIdRaw === '' ? null : (int)$contactIdRaw;
+
+            if ($newContactId !== null) {
+                $chk = $pdo->prepare("SELECT id FROM contacts WHERE id = ? AND deleted_at IS NULL");
+                $chk->execute([$newContactId]);
+                if (!$chk->fetchColumn()) {
+                    $errors[] = 'Onbekend of verwijderd contact.';
+                }
+                $dup = $pdo->prepare("SELECT username FROM users WHERE contact_id = ? AND id != ?");
+                $dup->execute([$newContactId, $id]);
+                if ($existingUsername = $dup->fetchColumn()) {
+                    $errors[] = 'Dit contact is al gekoppeld aan account "' . $existingUsername . '".';
+                }
+            }
+
+            if (!$errors) {
+                $pdo->prepare("UPDATE users SET contact_id = ? WHERE id = ?")
+                    ->execute([$newContactId, $id]);
                 if ($id === $currentUserId && function_exists('refreshSessionUser')) refreshSessionUser($pdo, $id);
-                $success = 'Primaire rol gewijzigd naar ' . h($newPrimary);
-                auditLog($pdo, 'USER_PRIMARY_ROLE_CHANGE', 'admin/users_detail.php', ['id'=>$id, 'new_role'=>$newPrimary]);
+                $success = 'Contactkoppeling opgeslagen.';
+                auditLog($pdo, 'USER_EXTRA_SET', 'admin/users_detail.php', [
+                    'id' => $id, 'contact_id' => $newContactId,
+                ]);
             }
         }
     }
@@ -381,6 +366,20 @@ $emailVerified = !empty($target['email_verified_at']);
 $verificationExpires = $target['verification_expires'] ?? null;
 $verificationValid = $verificationExpires && strtotime($verificationExpires) > time();
 
+// Contacten voor de koppel-dropdown: alle niet-verwijderde contacten, met
+// vermelding van een eventueel al gekoppeld account (zodat dat zichtbaar is
+// i.p.v. verrassend -- zie ook de duplicate-check bij het opslaan).
+$availableContacts = $pdo->prepare("
+    SELECT c.id, c.name, c.first_name, c.last_name, c.email,
+           u2.username AS linked_username
+    FROM contacts c
+    LEFT JOIN users u2 ON u2.contact_id = c.id AND u2.id != ?
+    WHERE c.deleted_at IS NULL
+    ORDER BY c.name, c.last_name, c.first_name
+");
+$availableContacts->execute([$id]);
+$availableContacts = $availableContacts->fetchAll(PDO::FETCH_ASSOC);
+
 $statusLabel = $status;
 $statusClass = 'badge';
 if ($isDeleted) {
@@ -403,33 +402,14 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Porbeheer - User detail</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-  :root{
-    --text:#fff; --muted:rgba(255,255,255,.78);
-    --border:rgba(255,255,255,.22);
-    --glass:rgba(255,255,255,.12);
-    --shadow:0 14px 40px rgba(0,0,0,.45);
-    --ok:#7CFFB2; --err:#FF8DA1; --accent:#ffd86b;
-  }
-  body{
-    margin:0; font-family:Arial,sans-serif; color:var(--text);
-    background:url('<?= h($bg) ?>') no-repeat center center fixed;
-    background-size:cover;
-  }
-  .backdrop{
-    min-height:100vh;
-    background: radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88)), linear-gradient(0deg, rgba(0,0,0,.35), rgba(0,0,0,.35));
-    padding:26px; box-sizing:border-box;
-    display:flex; justify-content:center;
-  }
-  .wrap{ width:min(1200px, 96vw); }
-  .topbar{
-    display:flex; align-items:flex-end; justify-content:space-between;
-    gap:16px; flex-wrap:wrap; margin-bottom:14px;
-  }
-  .brand h1{ margin:0; font-size:28px; letter-spacing:.5px; }
-  .brand .sub{ margin-top:6px; color:var(--muted); font-size:14px; }
-  .userbox{
+:root{
+  --accent: #ffd86b;
+  --err: #FF8DA1;
+  --ok: #7CFFB2;
+}
+.userbox{
     background:var(--glass);
     border:1px solid var(--border);
     border-radius:14px;
@@ -438,13 +418,10 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     backdrop-filter:blur(10px);
     min-width:260px;
   }
-  .userbox .line1{font-weight:bold}
-  .userbox .line2{color:var(--muted);margin-top:4px;font-size:13px}
-  a{ color:#fff; text-decoration:none; }
-  a:visited{ color:var(--accent); }
-  a:hover{ opacity:.95; }
-
-  .panel{
+a{ color:#fff; text-decoration:none; }
+a:visited{ color:var(--accent); }
+a:hover{ opacity:.95; }
+.panel{
     margin-top:10px;
     border-radius:20px;
     border:1px solid rgba(255,255,255,.18);
@@ -453,7 +430,7 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     backdrop-filter:blur(12px);
     padding:18px;
   }
-  .btn{
+.btn{
     display:inline-block;
     padding:10px 14px;
     border-radius:12px;
@@ -465,23 +442,23 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     box-shadow:0 10px 22px rgba(0,0,0,.20);
     transition:transform .12s ease, background .12s ease;
   }
-  .btn:hover{ transform:translateY(-1px); background:rgba(255,255,255,.18); }
-  .btn.ok{ border-color:rgba(124,255,178,.35); background:rgba(124,255,178,.10); }
-  .btn.danger{ border-color:rgba(255,141,161,.35); background:rgba(255,141,161,.10); }
-  .btn.small{ padding:8px 10px; font-size:13px; }
-  .msg-ok{
+.btn:hover{ transform:translateY(-1px); background:rgba(255,255,255,.18); }
+.btn.ok{ border-color:rgba(124,255,178,.35); background:rgba(124,255,178,.10); }
+.btn.danger{ border-color:rgba(255,141,161,.35); background:rgba(255,141,161,.10); }
+.btn.small{ padding:8px 10px; font-size:13px; }
+.msg-ok{
     margin:0 0 10px 0; padding:10px 12px; border-radius:12px;
     border:1px solid rgba(124,255,178,.35);
     background:rgba(124,255,178,.12);
     color:var(--ok); font-weight:900;
   }
-  .msg-err{
+.msg-err{
     margin:0 0 10px 0; padding:10px 12px; border-radius:12px;
     border:1px solid rgba(255,141,161,.35);
     background:rgba(255,141,161,.12);
     color:var(--err); font-weight:900;
   }
-  .badge{
+.badge{
     display:inline-block;
     padding:3px 10px;
     border-radius:999px;
@@ -491,24 +468,24 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     font-size:12px;
     margin-right:6px;
   }
-  .badge.ok{ border-color:rgba(124,255,178,.35); color:var(--ok); background:rgba(124,255,178,.10); }
-  .badge.off{ border-color:rgba(255,141,161,.35); color:var(--err); background:rgba(255,141,161,.10); }
-  .badge.warn{ border-color:rgba(255,216,107,.40); color:var(--accent); background:rgba(255,216,107,.10); }
-  .grid{
+.badge.ok{ border-color:rgba(124,255,178,.35); color:var(--ok); background:rgba(124,255,178,.10); }
+.badge.off{ border-color:rgba(255,141,161,.35); color:var(--err); background:rgba(255,141,161,.10); }
+.badge.warn{ border-color:rgba(255,216,107,.40); color:var(--accent); background:rgba(255,216,107,.10); }
+.grid{
     display:grid;
     grid-template-columns: 1fr 1fr;
     gap:14px;
     margin-top:12px;
   }
-  @media (max-width: 900px){ .grid{ grid-template-columns: 1fr; } }
-  .box{
+@media (max-width: 900px){ .grid{ grid-template-columns: 1fr; } }
+.box{
     border-radius:16px;
     border:1px solid rgba(255,255,255,.18);
     background:rgba(0,0,0,.14);
     padding:14px;
   }
-  .label{ color:var(--muted); font-size:12px; font-weight:900; }
-  .inp{
+.label{ color:var(--muted); font-size:12px; font-weight:900; }
+.inp{
     width:100%;
     margin-top:6px;
     padding:10px 12px;
@@ -519,10 +496,10 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     outline:none;
     box-sizing:border-box;
   }
-  .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-  .small{ margin-top:6px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
-  .hr{ height:1px; background:rgba(255,255,255,.12); margin:12px 0; }
-  .rolegrid{
+.row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.small{ margin-top:6px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+.hr{ height:1px; background:rgba(255,255,255,.12); margin:12px 0; }
+.rolegrid{
     display:flex; flex-wrap:wrap; gap:10px;
     margin-top:10px;
     padding:10px 12px;
@@ -530,24 +507,22 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
     background:rgba(0,0,0,.12);
     border-radius:14px;
   }
-  .roleitem{ display:flex; align-items:center; gap:8px; font-weight:900; font-size:13px; }
-  .roleitem input{ transform:scale(1.12); }
+.roleitem{ display:flex; align-items:center; gap:8px; font-weight:900; font-size:13px; }
+.roleitem input{ transform:scale(1.12); }
 </style>
 </head>
-<body>
+<body style="background-image:url('<?= h($bg) ?>')">
 <div class="backdrop">
   <div class="wrap">
     <div class="topbar">
       <div class="brand">
-        <h1>Porbeheer</h1>
+        <h1><a href="/admin/dashboard.php">Porbeheer</a></h1>
         <div class="sub">POP Oefenruimte Zevenaar • admin</div>
       </div>
       <div class="userbox">
         <div class="line1">Ingelogd: <?= h($user['username'] ?? '') ?> • Rol: <?= h($role) ?></div>
         <div class="line2">
-          <a href="/admin/dashboard.php">Dashboard</a> •
-          <a href="/admin/beheer.php">Beheer</a> •
-          <a href="/admin/users.php">Gebruikers</a>
+          <a href="/admin/dashboard.php">Dashboard</a> <a href="/admin/beheer.php">Beheer</a> <a href="/admin/users.php">Gebruikers</a>
         </div>
       </div>
     </div>
@@ -695,9 +670,9 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
           </form>
         </div>
 
-        <!-- Blok 3: Rollen & Primaire rol -->
+        <!-- Blok 3: Rollen (plat, meerdere tegelijk mogelijk) -->
         <div class="box">
-          <div class="label">Rollen & Primaire rol</div>
+          <div class="label">Rollen</div>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
             <input type="hidden" name="id" value="<?= (int)$target['id'] ?>">
@@ -719,23 +694,38 @@ auditLog($pdo, 'PAGE_VIEW', 'admin/users_detail.php', ['id'=>$id]);
             <div class="row" style="margin-top:12px;">
               <button class="btn small" type="submit" name="action" value="set_roles" <?= $isDeleted ? 'disabled' : '' ?>>Rollen opslaan</button>
             </div>
-            <div class="hr"></div>
-            <div class="label">Primaire rol (sessie & weergave)</div>
-            <select name="primary_role" class="inp" style="margin-top:8px;" <?= $isDeleted ? 'disabled' : '' ?>>
-              <?php foreach ($allowedRoles as $role): ?>
-                <?php if (in_array($role, $rolesNow, true) || $role === 'GEBRUIKER'): ?>
-                  <option value="<?= h($role) ?>" <?= $role === (string)$target['role'] ? 'selected' : '' ?>>
-                    <?= h($role) ?>
-                  </option>
-                <?php endif; ?>
+            <div class="small" style="margin-top:8px;">
+              Elke rol geeft rechten op onderdelen (zie de <a href="/admin/rechtenmatrix.php">rechtenmatrix</a>) -- een gebruiker mag er meerdere hebben.<br>
+              Beveiliging: ADMIN rol kan niet worden verwijderd van een ADMIN‑account. Laatste ADMIN kan niet gedowngraded worden.
+            </div>
+          </form>
+        </div>
+
+        <!-- Blok 3b: Contactkoppeling -->
+        <div class="box">
+          <div class="label">Contactkoppeling</div>
+          <form method="post">
+            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+            <input type="hidden" name="id" value="<?= (int)$target['id'] ?>">
+            <label class="small" style="display:block;margin-bottom:4px;">Gekoppeld contact (voor een toekomstig bandlid-account)</label>
+            <select name="contact_id" class="inp" <?= $isDeleted ? 'disabled' : '' ?>>
+              <option value="">-- geen koppeling --</option>
+              <?php foreach ($availableContacts as $c): ?>
+                <?php
+                  $label = trim((string)$c['name']) !== '' ? (string)$c['name']
+                    : trim(((string)$c['first_name']) . ' ' . ((string)$c['last_name']));
+                  if ((string)($c['email'] ?? '') !== '') $label .= ' (' . $c['email'] . ')';
+                  if (!empty($c['linked_username'])) $label .= ' -- al gekoppeld aan ' . $c['linked_username'];
+                  $isSelected = ((int)($target['contact_id'] ?? 0) === (int)$c['id']);
+                  $isTakenByOther = !empty($c['linked_username']) && !$isSelected;
+                ?>
+                <option value="<?= (int)$c['id'] ?>" <?= $isSelected ? 'selected' : '' ?> <?= $isTakenByOther ? 'disabled' : '' ?>>
+                  <?= h($label) ?>
+                </option>
               <?php endforeach; ?>
             </select>
             <div class="row" style="margin-top:12px;">
-              <button class="btn ok small" type="submit" name="action" value="set_primary_role" <?= $isDeleted ? 'disabled' : '' ?>>Primaire rol wijzigen</button>
-            </div>
-            <div class="small" style="margin-top:8px;">
-              💡 Huidige primaire rol: <span class="badge <?= (string)$target['role'] === 'ADMIN' ? 'ok' : '' ?>"><?= h((string)$target['role']) ?></span><br>
-              Beveiliging: ADMIN rol kan niet worden verwijderd van een ADMIN‑account. Laatste ADMIN kan niet gedowngraded worden.
+              <button class="btn small" type="submit" name="action" value="set_extra" <?= $isDeleted ? 'disabled' : '' ?>>Opslaan</button>
             </div>
           </form>
         </div>

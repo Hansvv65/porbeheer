@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../../libs/porbeheer/app/bootstrap.php';
 require_once __DIR__ . '/../../../libs/porbeheer/app/auth.php';
+include __DIR__ . '/../assets/includes/header.php';
 
 // Alleen ingelogde gebruikers met status ACTIVE mogen hier komen
 if (!isLoggedIn()) {
@@ -28,10 +29,6 @@ if (!$user) {
 
 $errors = [];
 $success = null;
-
-function h(?string $v): string {
-    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-}
 
 function isValidDutchMobile(string $phone): bool {
     return (bool)preg_match('/^(\+31|0)6[ -]?[1-9][0-9]{7}$/', $phone);
@@ -90,15 +87,16 @@ $csrf = csrfToken();
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Porbeheer - Profiel aanvullen</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
 :root{
-  --text:#fff; --muted:rgba(255,255,255,.78); --border:rgba(255,255,255,.22);
-  --glass:rgba(255,255,255,.14); --glass2:rgba(255,255,255,.08); --shadow:0 20px 50px rgba(0,0,0,.5);
-  --err:#FF8DA1; --ok:#7CFFB2; --info:#bf721f; --warn:#ffd86b;
-}
-body{
-  margin:0; font-family:Arial,Helvetica,sans-serif; color:var(--text);
-  background:url('/assets/images/loginbg.png') no-repeat center center fixed; background-size:cover;
+  --err: #FF8DA1;
+  --glass2: rgba(255, 255, 255, .08);
+  --glass: rgba(255, 255, 255, .14);
+  --info: #bf721f;
+  --ok: #7CFFB2;
+  --shadow: 0 20px 50px rgba(0, 0, 0, .5);
+  --warn: #ffd86b;
 }
 .backdrop{
   min-height:100vh; display:flex; align-items:center; justify-content:center;
@@ -113,7 +111,6 @@ body{
 }
 .card h2 { margin-top: 0; margin-bottom: 8px; font-size: 1.6rem; }
 .card .sub { color: var(--muted); margin-bottom: 24px; font-size: 0.95rem; }
-
 label { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; font-weight: bold; font-size: 0.9rem; }
 input, select { 
   padding: 12px; border-radius: 10px; border: 1px solid var(--border); 
@@ -121,14 +118,12 @@ input, select {
 }
 input:focus, select:focus { outline: none; border-color: var(--info); background: rgba(0,0,0,0.3); }
 select option { background: #1a1a2e; color: #fff; }
-
 .btn { 
   width: 100%; padding: 12px; border-radius: 10px; border: none; 
   background-color: var(--info); color: #fff; font-weight: 900; font-size: 1rem; cursor: pointer; margin-top: 10px;
   transition: opacity 0.2s;
 }
 .btn:hover { opacity: 0.9; }
-
 .msg{
   padding:12px; border-radius:10px; margin-bottom:15px; font-size:0.9rem;
   border:1px solid rgba(255,255,255,0.15);
@@ -140,7 +135,7 @@ select option { background: #1a1a2e; color: #fff; }
 .action:hover { text-decoration: underline; filter: brightness(1.2); }
 </style>
 </head>
-<body>
+<body style="background-image:url('/assets/images/loginbg.png')">
 <div class="backdrop">
   <div class="shell">
     <div class="card">

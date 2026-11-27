@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
+include __DIR__ . '/assets/includes/header.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/mail.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -18,32 +19,6 @@ $success = null;
 
 function makeToken(int $bytes = 32): string {
     return rtrim(strtr(base64_encode(random_bytes($bytes)), '+/', '-_'), '=');
-}
-
-function mailLayout(string $title, string $intro, string $contentHtml): string {
-    return '
-    <div style="margin:0;padding:24px;background:#f4f7fb;font-family:Arial,sans-serif;color:#243447;">
-      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d9e2ec;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08);">
-        
-        <div style="padding:18px 24px;background:linear-gradient(180deg,#eef6ff,#e6f0fb);border-bottom:1px solid #d9e2ec;">
-          <div style="font-size:22px;font-weight:700;color:#1f3b57;">Porbeheer</div>
-          <div style="margin-top:4px;font-size:13px;color:#5b7083;">POP Oefenruimte Zevenaar</div>
-        </div>
-
-        <div style="padding:28px 24px;">
-          <h2 style="margin:0 0 12px 0;font-size:22px;color:#1f3b57;">' . h($title) . '</h2>
-          <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#425466;">' . h($intro) . '</p>
-
-          <div style="font-size:15px;line-height:1.7;color:#243447;">
-            ' . $contentHtml . '
-          </div>
-        </div>
-
-        <div style="padding:16px 24px;background:#f8fbff;border-top:1px solid #d9e2ec;font-size:12px;color:#6b7c93;">
-          Dit is een automatisch bericht van Porbeheer.
-        </div>
-      </div>
-    </div>';
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -154,9 +129,13 @@ $csrf = csrfToken();
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - Wachtwoord vergeten</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);--ok:#7CFFB2;--err:#FF8DA1;--info:#bf721f;}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);background:url('/assets/images/loginbg.png') no-repeat center center fixed;background-size:cover;}
+:root{
+  --err: #FF8DA1;
+  --info: #bf721f;
+  --ok: #7CFFB2;
+}
 .backdrop{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:26px;box-sizing:border-box;background:radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88));}
 .box{width:min(460px,92vw);border-radius:20px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));box-shadow:var(--shadow);backdrop-filter:blur(12px);padding:22px;}
 label{display:block;margin-top:12px;font-weight:800}
@@ -171,7 +150,7 @@ a{color:var(--info);text-decoration:none;font-weight:600;text-shadow:0 1px 2px r
 a:hover{text-decoration:underline;filter:brightness(1.2);}
 </style>
 </head>
-<body>
+<body style="background-image:url('/assets/images/loginbg.png')">
 <div class="backdrop">
   <div class="box">
     <h1>Wachtwoord vergeten</h1>

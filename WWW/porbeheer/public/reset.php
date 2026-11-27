@@ -4,6 +4,7 @@ declare(strict_types=1);
 /* reset.php - Wachtwoord resetten */
 
 require_once __DIR__ . '/../../libs/porbeheer/app/bootstrap.php';
+include __DIR__ . '/assets/includes/header.php';
 require_once __DIR__ . '/../../libs/porbeheer/app/mail.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -130,9 +131,12 @@ $csrf = csrfToken();
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Porbeheer - Wachtwoord resetten</title>
+<link rel="stylesheet" href="/assets/css/main.css">
 <style>
-:root{--text:#fff;--muted:rgba(255,255,255,.78);--glass:rgba(255,255,255,.12);--glass2:rgba(255,255,255,.06);--shadow:0 14px 40px rgba(0,0,0,.45);--ok:#7CFFB2;--err:#FF8DA1;}
-body{margin:0;font-family:Arial,sans-serif;color:var(--text);background:url('/assets/images/loginbg.png') no-repeat center center fixed;background-size:cover;}
+:root{
+  --err: #FF8DA1;
+  --ok: #7CFFB2;
+}
 .backdrop{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:26px;box-sizing:border-box;background:radial-gradient(circle at 25% 15%, rgba(0,0,0,.35), rgba(0,0,0,.75) 55%, rgba(0,0,0,.88));}
 .box{width:min(460px,92vw);border-radius:20px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06));box-shadow:var(--shadow);backdrop-filter:blur(12px);padding:22px;}
 label{display:block;margin-top:12px;font-weight:800}
@@ -144,7 +148,7 @@ input{width:100%;padding:11px 12px;border-radius:12px;border:1px solid rgba(255,
 a{color:#fff}
 </style>
 </head>
-<body>
+<body style="background-image:url('/assets/images/loginbg.png')">
 <div class="backdrop">
   <div class="box">
     <h1>Wachtwoord resetten</h1>
