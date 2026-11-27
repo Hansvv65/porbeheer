@@ -599,8 +599,11 @@ function themeImage(string $baseName, PDO $pdo): string
 
 function refreshSessionUser(PDO $pdo, int $userId): void
 {
+    // SELECT * (net als completeLoginSession): een vaste kolomlijst crashte
+    // op productie omdat de kolom is_bestuurslid daar niet (meer) bestaat.
+    // Ontbrekende velden worden hieronder al netjes met ?? / !empty() opgevangen.
     $st = $pdo->prepare("
-        SELECT id, username, first_name, role, contact_id, is_bestuurslid, theme_variant, totp_enabled
+        SELECT *
         FROM users
         WHERE id = ?
         LIMIT 1
